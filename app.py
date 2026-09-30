@@ -209,7 +209,7 @@ with st.sidebar:
   ]
 
   if perfil in ["Admin", "Gestor"]:
-    opcoes.extend(["✍️️ Lançar Treinamento", "📜 Certificados & Presença"])
+    opcoes.extend(["✍️ Lançar Treinamento", "📜 Certificados & Presença"])
 
   opcoes.append("📂 Relatórios p/ Auditoria")
 
@@ -810,7 +810,7 @@ elif pagina == "👤 Visão do Colaborador":
                     key=f"dl_f_{cid}_{tid}",
                 )
 
-        # SALVAMENTO TRATADO PARA AUTOINCREMENTO E CHAVE PRIMÁRIA
+        # SALVAMENTO DIRETO E CORRIGIDO
         if st.button(
             f"💾 Salvar Atualização de '{nome_curso}'",
             key=f"btn_save_{cid}_{tid}",
@@ -830,19 +830,21 @@ elif pagina == "👤 Visão do Colaborador":
                     content_type=up_f.type,
                 )
 
-              # Gera o Certificado PDF
+              # 1. Gera o Certificado PDF
               nome_cert_auto = f"Certificado_AUTO_{cid}_{tid}_{dt_str}.pdf"
               pdf_bytes_cert = gerar_pdf_certificado(
-                  colab_nome=colab_info["nome"],
-                  colab_cargo=colab_info["cargo"],
-                  curso_nome=nome_curso,
-                  carga_horaria=ch_val,
+                  colab_nome=str(colab_info["nome"]),
+                  colab_cargo=str(colab_info["cargo"] or ""),
+                  curso_nome=str(nome_curso),
+                  carga_horaria=str(ch_val),
                   data_realizacao=dt_str,
-                  aplicador_nome=limpar_valor(nome_aplicador),
-                  aplicador_cargo=limpar_valor(cargo_aplicador),
+                  aplicador_nome=limpar_valor(nome_aplicador)
+                  or "Aplicador Técnico",
+                  aplicador_cargo=limpar_valor(cargo_aplicador)
+                  or "Aplicador do Treinamento",
               )
 
-              # Salva no Storage
+              # 2. Upload do PDF para o Storage
               salvar_arquivo_supabase(
                   nome_cert_auto, pdf_bytes_cert.getvalue()
               )
@@ -860,40 +862,30 @@ elif pagina == "👤 Visão do Colaborador":
                   "custo_real": 0.0,
               }
 
-              # Consulta se o registro já existe para pegar o ID numérico
-              check_db = (
-                  supabase.table("registros")
-                  .select("id")
-                  .eq("colaborador_id", cid)
-                  .eq("treinamento_id", tid)
-                  .execute()
-              )
-
-              if check_db.data:
-                # Atualiza a linha existente sem reenviar 'id' no payload
-                reg_id = check_db.data[0]["id"]
+              # 3. Atualiza ou insere filtrando por ID obtido da memória
+              if is_concluido and reg_info is not None and reg_info.get("ID"):
+                reg_id_existente = int(reg_info["ID"])
                 supabase.table("registros").update(payload).eq(
-                    "id", reg_id
+                    "id", reg_id_existente
                 ).execute()
               else:
-                # Insere novo registro (deixa a chave primária autoincrementar)
                 supabase.table("registros").insert(payload).execute()
 
               st.success(f"🎉 Certificado gerado para '{nome_curso}'!")
               st.rerun()
 
             elif novo_status == "🔴 Pendente" and is_concluido:
-              # Elimina arquivos do Storage
+              # Elimina ficheiros do Storage
               if reg_info is not None:
                 if reg_info.get("Evidencia"):
                   deletar_arquivo_supabase(reg_info["Evidencia"])
                 if reg_info.get("Forms"):
                   deletar_arquivo_supabase(reg_info["Forms"])
 
-              # Elimina o registro do banco pelo ID
+              # Elimina o registo
               if reg_info is not None and reg_info.get("ID"):
                 supabase.table("registros").delete().eq(
-                    "id", reg_info["ID"]
+                    "id", int(reg_info["ID"])
                 ).execute()
               else:
                 supabase.table("registros").delete().eq(
