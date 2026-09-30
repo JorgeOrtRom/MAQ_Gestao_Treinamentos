@@ -696,84 +696,6 @@ def baixar_arquivo_supabase(path_name):
 
 
 # -------------------------------------------------------------------
-# CALLBACK DIRETO PARA SALVAR ALTERAÇÃO DE STATUS DE FORMA INSTANTÂNEA
-# -------------------------------------------------------------------
-def processar_mudanca_status(cid, tid, nome_curso, ch_val, colab_nome, colab_cargo):
-  key_status = f"status_{cid}_{tid}"
-  status_escolhido = st.session_state.get(key_status)
-
-  # Recupera data, aplicador e cargo dos componentes da linha
-  dt_val = st.session_state.get(f"data_{cid}_{tid}", dt_module.date.today())
-  dt_str = dt_val.strftime("%Y-%m-%d")
-  nome_ap = limpar_valor(st.session_state.get(f"inst_{cid}_{tid}")) or "Aplicador Técnico"
-  cargo_ap = limpar_valor(st.session_state.get(f"acargo_{cid}_{tid}")) or "Aplicador do Treinamento"
-
-  try:
-    if status_escolhido == "🟢 Concluído":
-      nome_cert_auto = f"Certificado_AUTO_{cid}_{tid}_{dt_str}.pdf"
-      pdf_bytes_cert = gerar_pdf_certificado(
-          colab_nome=str(colab_nome),
-          colab_cargo=str(colab_cargo or ""),
-          curso_nome=str(nome_curso),
-          carga_horaria=str(ch_val),
-          data_realizacao=dt_str,
-          aplicador_nome=nome_ap,
-          aplicador_cargo=cargo_ap,
-      )
-
-      salvar_arquivo_supabase(nome_cert_auto, pdf_bytes_cert.getvalue())
-
-      payload = {
-          "colaborador_id": cid,
-          "treinamento_id": tid,
-          "data_realizacao": dt_str,
-          "validade_meses": 12,
-          "status_planilha": "Concluído",
-          "arquivo_evidencia": nome_cert_auto,
-          "arquivo_forms": "Sem anexo",
-          "instrutor_nome": nome_ap,
-          "aplicador_cargo": cargo_ap,
-          "custo_real": 0.0,
-      }
-
-      check_db = (
-          supabase.table("registros")
-          .select("id")
-          .eq("colaborador_id", cid)
-          .eq("treinamento_id", tid)
-          .execute()
-      )
-
-      if check_db.data:
-        reg_id_existente = check_db.data[0]["id"]
-        supabase.table("registros").update(payload).eq("id", reg_id_existente).execute()
-      else:
-        supabase.table("registros").insert(payload).execute()
-
-      st.cache_data.clear()
-
-    elif status_escolhido == "🔴 Pendente":
-      check_db = (
-          supabase.table("registros")
-          .select("id, arquivo_evidencia, arquivo_forms")
-          .eq("colaborador_id", cid)
-          .eq("treinamento_id", tid)
-          .execute()
-      )
-
-      if check_db.data:
-        r_del = check_db.data[0]
-        deletar_arquivo_supabase(r_del.get("arquivo_evidencia"))
-        deletar_arquivo_supabase(r_del.get("arquivo_forms"))
-        supabase.table("registros").delete().eq("id", r_del["id"]).execute()
-
-      st.cache_data.clear()
-
-  except Exception as err:
-    st.error(f"Erro na atualização: {err}")
-
-
-# -------------------------------------------------------------------
 # 1. DASHBOARD EXECUTIVO
 # -------------------------------------------------------------------
 if pagina == "📊 Dashboard Executivo":
@@ -787,7 +709,7 @@ if pagina == "📊 Dashboard Executivo":
     res_reg = (
         supabase.table("registros")
         .select(
-            "data_realizacao, validade_meses, colaboradores(nome, departamento),"
+            "data_realizacao, validade_meses, status_planilha, colaboradores(nome, departamento),"
             " treinamentos(nome_curso, carga_horaria, classificacao)"
         )
         .execute()
@@ -817,8 +739,9 @@ if pagina == "📊 Dashboard Executivo":
       dt_r = r.get("data_realizacao")
       colab = r.get("colaboradores") or {}
       treino = r.get("treinamentos") or {}
+      status_db = r.get("status_planilha")
 
-      if dt_r and str(dt_r).startswith(str(ano_exercicio)):
+      if status_db == "Concluído" and dt_r and str(dt_r).startswith(str(ano_exercicio)):
         flat_data.append({
             "Colaborador": colab.get("nome", "Desconhecido"),
             "Departamento": colab.get("departamento", "Geral"),
@@ -1009,13 +932,19 @@ elif pagina == "👤 Visão do Colaborador":
         })
     df_realizados = pd.DataFrame(flat_ind)
 
-    qtd_realizados = len(df_realizados)
+    # Considera apenas concluidos para contagem
+    df_concluidos = (
+        df_realizados[df_realizados["StatusPlanilha"] == "Concluído"]
+        if not df_realizados.empty
+        else pd.DataFrame()
+    )
+    qtd_realizados = len(df_concluidos)
     qtd_pendentes = max(0, total_mapeados - qtd_realizados)
     pct_concluido = (
         (qtd_realizados / total_mapeados * 100) if total_mapeados > 0 else 0.0
     )
     horas_acumuladas = (
-        df_realizados["Horas"].sum() if not df_realizados.empty else 0.0
+        df_concluidos["Horas"].sum() if not df_concluidos.empty else 0.0
     )
 
     c_f1, c_f2 = st.columns([3, 1])
@@ -1034,7 +963,7 @@ elif pagina == "👤 Visão do Colaborador":
     with c_f2:
       st.write(f"📄 **Prontuário {ano_exercicio}**")
       pdf_bytes = gerar_pdf_prontuario(
-          colab_info, df_realizados, total_mapeados, ano_exercicio
+          colab_info, df_concluidos, total_mapeados, ano_exercicio
       )
       st.download_button(
           label="🖨️ Baixar Prontuário PDF",
@@ -1063,8 +992,7 @@ elif pagina == "👤 Visão do Colaborador":
 
     st.divider()
     st.subheader(
-        "📋 Gestão Individual por Treinamento (Atualização Automática ao Alterar"
-        " Status)"
+        "📋 Gestão Individual por Treinamento (Atualização de Status e Evidências)"
     )
 
     for _, r_t in df_lnt_cargo.iterrows():
@@ -1093,14 +1021,14 @@ elif pagina == "👤 Visão do Colaborador":
         key_status = f"status_{cid}_{tid}"
 
         with col_c1:
-          # O Selectbox agora usa o callback instantâneo `on_change`
+          status_opcoes = ["🔴 Pendente", "🟢 Concluído"]
+          idx_default = 1 if is_concluido else 0
+
           st.selectbox(
               "Status",
-              ["🔴 Pendente", "🟢 Concluído"],
-              index=1 if is_concluido else 0,
+              options=status_opcoes,
+              index=idx_default,
               key=key_status,
-              on_change=processar_mudanca_status,
-              args=(cid, tid, nome_curso, ch_val, colab_info["nome"], colab_info["cargo"]),
           )
 
         with col_c2:
@@ -1109,7 +1037,7 @@ elif pagina == "👤 Visão do Colaborador":
               if is_concluido and reg_info["DataRealizacao"]
               else dt_module.date.today()
           )
-          st.date_input(
+          nova_data = st.date_input(
               "Data Aplicação", value=dt_def, key=f"data_{cid}_{tid}"
           )
         with col_c3:
@@ -1118,7 +1046,7 @@ elif pagina == "👤 Visão do Colaborador":
               if (is_concluido and reg_info["Instrutor"])
               else (r_t.get("aplicador_padrao") or "Aplicador Técnico")
           )
-          st.text_input(
+          nome_aplicador = st.text_input(
               "Nome Aplicador",
               value=limpar_valor(inst_def) or "",
               key=f"inst_{cid}_{tid}",
@@ -1132,7 +1060,7 @@ elif pagina == "👤 Visão do Colaborador":
                   or "Aplicador do Treinamento"
               )
           )
-          st.text_input(
+          cargo_aplicador = st.text_input(
               "Cargo Aplicador",
               value=limpar_valor(cargo_def) or "",
               key=f"acargo_{cid}_{tid}",
@@ -1172,6 +1100,107 @@ elif pagina == "👤 Visão do Colaborador":
                     file_name=forms_file,
                     key=f"dl_f_{cid}_{tid}",
                 )
+
+        # BOTÃO SALVAR REVISADO E COMPATÍVEL COM SUPABASE
+        if st.button(
+            f"💾 Salvar Atualização de '{nome_curso}'",
+            key=f"btn_save_{cid}_{tid}",
+        ):
+          dt_str = nova_data.strftime("%Y-%m-%d")
+          status_selecionado = st.session_state.get(key_status)
+
+          try:
+            if status_selecionado == "🟢 Concluído":
+              nome_forms_salvo = (
+                  reg_info["Forms"] if is_concluido and reg_info is not None else "Sem anexo"
+              )
+              if up_f is not None:
+                nome_forms_salvo = f"Forms_{cid}_{tid}_{dt_str}_{up_f.name}"
+                salvar_arquivo_supabase(
+                    nome_forms_salvo,
+                    up_f.getvalue(),
+                    content_type=up_f.type,
+                )
+
+              # 1. Gera o PDF do Certificado
+              nome_cert_auto = f"Certificado_AUTO_{cid}_{tid}_{dt_str}.pdf"
+              pdf_bytes_cert = gerar_pdf_certificado(
+                  colab_nome=str(colab_info["nome"]),
+                  colab_cargo=str(colab_info["cargo"] or ""),
+                  curso_nome=str(nome_curso),
+                  carga_horaria=str(ch_val),
+                  data_realizacao=dt_str,
+                  aplicador_nome=limpar_valor(nome_aplicador)
+                  or "Aplicador Técnico",
+                  aplicador_cargo=limpar_valor(cargo_aplicador)
+                  or "Aplicador do Treinamento",
+              )
+
+              # 2. Upload do PDF para o Storage
+              salvar_arquivo_supabase(
+                  nome_cert_auto, pdf_bytes_cert.getvalue()
+              )
+
+              payload = {
+                  "colaborador_id": cid,
+                  "treinamento_id": tid,
+                  "data_realizacao": dt_str,
+                  "validade_meses": 12,
+                  "status_planilha": "Concluído",
+                  "arquivo_evidencia": nome_cert_auto,
+                  "arquivo_forms": nome_forms_salvo,
+                  "instrutor_nome": limpar_valor(nome_aplicador),
+                  "aplicador_cargo": limpar_valor(cargo_aplicador),
+                  "custo_real": 0.0,
+              }
+
+              # 3. Consulta no banco em tempo real antes de gravar
+              check_db = (
+                  supabase.table("registros")
+                  .select("id")
+                  .eq("colaborador_id", cid)
+                  .eq("treinamento_id", tid)
+                  .execute()
+              )
+
+              if check_db.data:
+                reg_id_existente = check_db.data[0]["id"]
+                supabase.table("registros").update(payload).eq(
+                    "id", reg_id_existente
+                ).execute()
+              else:
+                supabase.table("registros").insert(payload).execute()
+
+              st.cache_data.clear()
+              st.success(f"🎉 Certificado gerado para '{nome_curso}'!")
+              st.rerun()
+
+            elif status_selecionado == "🔴 Pendente":
+              check_db = (
+                  supabase.table("registros")
+                  .select("id, arquivo_evidencia, arquivo_forms")
+                  .eq("colaborador_id", cid)
+                  .eq("treinamento_id", tid)
+                  .execute()
+              )
+
+              if check_db.data:
+                r_del = check_db.data[0]
+                deletar_arquivo_supabase(r_del.get("arquivo_evidencia"))
+                deletar_arquivo_supabase(r_del.get("arquivo_forms"))
+
+                supabase.table("registros").delete().eq(
+                    "id", r_del["id"]
+                ).execute()
+
+              st.cache_data.clear()
+              st.warning(
+                  f"🗑️ Registro e certificado de '{nome_curso}' removidos!"
+              )
+              st.rerun()
+
+          except Exception as err:
+            st.error(f"Erro na gravação do registro: {err}")
 
         st.divider()
 
@@ -1670,7 +1699,7 @@ elif pagina == "📈 Evolução por Treinamento":
   total_colabs = res_colabs_count.count or 0
 
   res_t = supabase.table("treinamentos").select("*").execute()
-  res_r = supabase.table("registros").select("treinamento_id, data_realizacao").execute()
+  res_r = supabase.table("registros").select("treinamento_id, data_realizacao, status_planilha").execute()
 
   df_t = pd.DataFrame(res_t.data)
   df_r = pd.DataFrame(res_r.data)
@@ -1679,10 +1708,10 @@ elif pagina == "📈 Evolução por Treinamento":
     st.info("Nenhum treinamento cadastrado.")
   else:
     if not df_r.empty:
-      df_r["ano"] = df_r["data_realizacao"].apply(
-          lambda x: str(x)[:4] if x else ""
-      )
-      df_r_ano = df_r[df_r["ano"] == str(ano_exercicio)]
+      df_r_ano = df_r[
+          (df_r["status_planilha"] == "Concluído")
+          & (df_r["data_realizacao"].astype(str).str.startswith(str(ano_exercicio)))
+      ]
       counts = df_r_ano["treinamento_id"].value_counts().to_dict()
     else:
       counts = {}
