@@ -465,12 +465,11 @@ def salvar_arquivo_supabase(
         file_options={"content-type": content_type, "upsert": "true"},
     )
     return path_name
-  except Exception:
+  except Exception as e:
     return path_name
 
 
 def deletar_arquivo_supabase(path_name):
-  """Deleta o arquivo do Storage do Supabase ao reverter para Pendente."""
   try:
     if path_name and str(path_name).strip().lower() not in [
         "none",
@@ -688,10 +687,10 @@ elif pagina == "👤 Visão do Colaborador":
               "Horas": float(r["treinamentos"]["carga_horaria"] or 0),
               "DataRealizacao": dt_r,
               "ValidadeMeses": int(r["validade_meses"] or 12),
-              "Evidencia": r["arquivo_evidencia"],
-              "Forms": r["arquivo_forms"],
-              "Instrutor": r["instrutor_nome"],
-              "AplicadorCargo": r["aplicador_cargo"],
+              "Evidencia": r.get("arquivo_evidencia"),
+              "Forms": r.get("arquivo_forms"),
+              "Instrutor": r.get("instrutor_nome"),
+              "AplicadorCargo": r.get("aplicador_cargo"),
           })
     df_realizados = pd.DataFrame(flat_ind)
 
@@ -810,91 +809,85 @@ elif pagina == "👤 Visão do Colaborador":
                     key=f"dl_f_{cid}_{tid}",
                 )
 
-        # BOTÃO DE SALVAMENTO COM GERAÇÃO/EXCLUSÃO AUTOMÁTICA DE CERTIFICADOS
+        # LÓGICA CORRIGIDA DE GRAVAÇÃO E GERAÇÃO DO CERTIFICADO
         if st.button(
             f"💾 Salvar Atualização de '{nome_curso}'",
             key=f"btn_save_{cid}_{tid}",
         ):
           dt_str = nova_data.strftime("%Y-%m-%d")
 
-          # 1. CASO: ALTEROU PARA "🟢 CONCLUÍDO" -> GERAR CERTIFICADO AUTOMÁTICO
-          if novo_status == "🟢 Concluído":
-            nome_forms_salvo = (
-                reg_info["Forms"] if is_concluido else "Sem anexo"
-            )
-            if up_f is not None:
-              nome_forms_salvo = f"Forms_{cid}_{tid}_{dt_str}_{up_f.name}"
-              salvar_arquivo_supabase(
-                  nome_forms_salvo, up_f.getbuffer()
+          try:
+            if novo_status == "🟢 Concluído":
+              nome_forms_salvo = (
+                  reg_info["Forms"] if is_concluido else "Sem anexo"
+              )
+              if up_f is not None:
+                nome_forms_salvo = f"Forms_{cid}_{tid}_{dt_str}_{up_f.name}"
+                salvar_arquivo_supabase(
+                    nome_forms_salvo,
+                    up_f.getvalue(),
+                    content_type=up_f.type,
+                )
+
+              # Gera o Certificado PDF em memória
+              nome_cert_auto = f"Certificado_AUTO_{cid}_{tid}_{dt_str}.pdf"
+              pdf_bytes_cert = gerar_pdf_certificado(
+                  colab_nome=colab_info["nome"],
+                  colab_cargo=colab_info["cargo"],
+                  curso_nome=nome_curso,
+                  carga_horaria=ch_val,
+                  data_realizacao=dt_str,
+                  aplicador_nome=limpar_valor(nome_aplicador),
+                  aplicador_cargo=limpar_valor(cargo_aplicador),
               )
 
-            # Geração Automática do Certificado em PDF
-            nome_cert_auto = f"Certificado_AUTO_{cid}_{tid}_{dt_str}.pdf"
-            pdf_bytes_cert = gerar_pdf_certificado(
-                colab_nome=colab_info["nome"],
-                colab_cargo=colab_info["cargo"],
-                curso_nome=nome_curso,
-                carga_horaria=ch_val,
-                data_realizacao=dt_str,
-                aplicador_nome=limpar_valor(nome_aplicador),
-                aplicador_cargo=limpar_valor(cargo_aplicador),
-            )
+              # Salva o certificado gerado no Storage do Supabase
+              salvar_arquivo_supabase(
+                  nome_cert_auto, pdf_bytes_cert.getvalue()
+              )
 
-            # Upload do PDF para o Storage do Supabase
-            salvar_arquivo_supabase(
-                nome_cert_auto, pdf_bytes_cert.getvalue()
-            )
+              payload = {
+                  "colaborador_id": cid,
+                  "treinamento_id": tid,
+                  "data_realizacao": dt_str,
+                  "validade_meses": 12,
+                  "status_planilha": "Concluído",
+                  "arquivo_evidencia": nome_cert_auto,
+                  "arquivo_forms": nome_forms_salvo,
+                  "instrutor_nome": limpar_valor(nome_aplicador),
+                  "aplicador_cargo": limpar_valor(cargo_aplicador),
+                  "custo_real": 0.0,
+              }
 
-            payload = {
-                "colaborador_id": cid,
-                "treinamento_id": tid,
-                "data_realizacao": dt_str,
-                "validade_meses": 12,
-                "status_planilha": "Concluído",
-                "arquivo_evidencia": nome_cert_auto,
-                "arquivo_forms": nome_forms_salvo,
-                "instrutor_nome": limpar_valor(nome_aplicador),
-                "aplicador_cargo": limpar_valor(cargo_aplicador),
-                "custo_real": 0.0,
-            }
+              # Deleta registro antigo para evitar duplicidade de chave composta
+              supabase.table("registros").delete().eq(
+                  "colaborador_id", cid
+              ).eq("treinamento_id", tid).execute()
 
-            # Grava o registro no Supabase
-            try:
-              supabase.table("registros").upsert(payload).execute()
-            except Exception:
-              if not is_concluido:
-                supabase.table("registros").insert(payload).execute()
-              else:
-                supabase.table("registros").update(payload).eq(
-                    "colaborador_id", cid
-                ).eq("treinamento_id", tid).execute()
+              # Insere o novo registro atualizado
+              supabase.table("registros").insert(payload).execute()
 
-            st.success(
-                f"🎉 Certificado gerado e treinamento '{nome_curso}' salvo com"
-                " sucesso!"
-            )
-            st.rerun()
+              st.success(f"🎉 Certificado gerado para '{nome_curso}'!")
+              st.rerun()
 
-          # 2. CASO: ALTEROU PARA "🔴 PENDENTE" -> APAGAR CERTIFICADO DO STORAGE E REMOVER REGISTRO
-          elif novo_status == "🔴 Pendente" and is_concluido:
-            # Apaga o arquivo do certificado do Storage
-            if reg_info is not None and reg_info["Evidencia"]:
-              deletar_arquivo_supabase(reg_info["Evidencia"])
+            elif novo_status == "🔴 Pendente" and is_concluido:
+              # Apaga arquivos do Storage se existirem
+              if reg_info is not None:
+                if reg_info.get("Evidencia"):
+                  deletar_arquivo_supabase(reg_info["Evidencia"])
+                if reg_info.get("Forms"):
+                  deletar_arquivo_supabase(reg_info["Forms"])
 
-            # Apaga o formulário/anexo do Storage (se houver)
-            if reg_info is not None and reg_info["Forms"]:
-              deletar_arquivo_supabase(reg_info["Forms"])
+              # Deleta a linha do banco de dados
+              supabase.table("registros").delete().eq(
+                  "colaborador_id", cid
+              ).eq("treinamento_id", tid).execute()
 
-            # Deleta a linha do banco de dados no Supabase
-            supabase.table("registros").delete().eq(
-                "colaborador_id", cid
-            ).eq("treinamento_id", tid).execute()
+              st.warning(f"🗑️ Registro e certificado de '{nome_curso}' removidos!")
+              st.rerun()
 
-            st.warning(
-                f"🗑️ Certificado excluído e registro do treinamento"
-                f" '{nome_curso}' removido!"
-            )
-            st.rerun()
+          except Exception as err:
+            st.error(f"Erro na gravação do registro: {err}")
 
         st.divider()
 
