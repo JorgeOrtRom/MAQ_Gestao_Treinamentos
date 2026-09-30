@@ -547,7 +547,7 @@ if pagina == "📊 Dashboard Executivo":
           axis=1,
       )
       hoje = pd.to_datetime(dt_module.date.today())
-      df["DiasParaVencer"] = (df["DataVencimento"] - hoje).dt.days
+      df["DiasParaVencer"] = (df["DataVencimento"] - hoj).dt.days
 
       def set_status(dias):
         if dias < 0:
@@ -669,7 +669,7 @@ elif pagina == "👤 Visão do Colaborador":
 
     total_mapeados = len(df_lnt_cargo)
 
-    # Busca sem restricao de data para garantir exibicao do certificado em memoria
+    # Consulta direta dos registros atuais do colaborador
     res_ind = (
         supabase.table("registros")
         .select("*, treinamentos(*)")
@@ -699,7 +699,7 @@ elif pagina == "👤 Visão do Colaborador":
         <div class="colab-card">
             <h3 style="margin-top:0;">👤 <b>{colab_info['nome']}</b></h3>
             <p style="margin-bottom:5px;">💼 <b>Cargo:</b> {colab_info['cargo'] or 'N/A'} &nbsp;|&nbsp; 👔 <b>Gestor:</b> {colab_info['gestor'] or 'N/A'}</p>
-            <p style="margin-bottom:0;">🏢 <b>Departamento:</b> {colab_info['departamento']} &nbsp;|&nbsp; ✉️️ <b>E-mail:</b> {colab_info['email'] or 'N/A'}</p>
+            <p style="margin-bottom:0;">🏢 <b>Departamento:</b> {colab_info['departamento']} &nbsp;|&nbsp; ✉️ <b>E-mail:</b> {colab_info['email'] or 'N/A'}</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -809,7 +809,7 @@ elif pagina == "👤 Visão do Colaborador":
                     key=f"dl_f_{cid}_{tid}",
                 )
 
-        # SALVAMENTO COMPLETO
+        # SALVAMENTO COMPLETO E LIMPEZA DE CACHE
         if st.button(
             f"💾 Salvar Atualização de '{nome_curso}'",
             key=f"btn_save_{cid}_{tid}",
@@ -878,6 +878,7 @@ elif pagina == "👤 Visão do Colaborador":
               else:
                 supabase.table("registros").insert(payload).execute()
 
+              st.cache_data.clear()
               st.success(f"🎉 Certificado gerado para '{nome_curso}'!")
               st.rerun()
 
@@ -894,6 +895,7 @@ elif pagina == "👤 Visão do Colaborador":
                   "colaborador_id", cid
               ).eq("treinamento_id", tid).execute()
 
+              st.cache_data.clear()
               st.warning(f"🗑️ Registro e certificado de '{nome_curso}' removidos!")
               st.rerun()
 
@@ -973,6 +975,7 @@ elif pagina == "📚 Catálogo de Treinamentos":
               "aplicador_padrao": n_ap_nome.strip(),
               "aplicador_cargo_padrao": n_ap_cargo.strip(),
           }).execute()
+          st.cache_data.clear()
           st.success(
               f"Treinamento '{n_curso}' cadastrado no Supabase!"
           )
