@@ -1138,12 +1138,24 @@ elif pagina == "👤 Visão do Colaborador":
         key_status = f"status_{cid}_{tid}"
 
         with col_c1:
-          novo_status = st.selectbox(
-              "Status",
-              ["🔴 Pendente", "🟢 Concluído"],
-              index=1 if is_concluido else 0,
-              key=key_status,
-          )
+          # Lógica corrigida para impedir a perda de estado ao renderizar
+          options_status = ["🔴 Pendente", "🟢 Concluído"]
+          idx_default = 1 if is_concluido else 0
+
+          if key_status in st.session_state:
+            novo_status = st.selectbox(
+                "Status",
+                options_status,
+                key=key_status,
+            )
+          else:
+            novo_status = st.selectbox(
+                "Status",
+                options_status,
+                index=idx_default,
+                key=key_status,
+            )
+
         with col_c2:
           dt_def = (
               pd.to_datetime(reg_info["DataRealizacao"]).date()
@@ -1214,6 +1226,7 @@ elif pagina == "👤 Visão do Colaborador":
                     key=f"dl_f_{cid}_{tid}",
                 )
 
+        # BOTÃO SALVAR REVISADO E COMPATÍVEL COM NUVEM
         if st.button(
             f"💾 Salvar Atualização de '{nome_curso}'",
             key=f"btn_save_{cid}_{tid}",
@@ -1234,6 +1247,7 @@ elif pagina == "👤 Visão do Colaborador":
                     content_type=up_f.type,
                 )
 
+              # 1. Gera o PDF do Certificado
               nome_cert_auto = f"Certificado_AUTO_{cid}_{tid}_{dt_str}.pdf"
               pdf_bytes_cert = gerar_pdf_certificado(
                   colab_nome=str(colab_info["nome"]),
@@ -1247,6 +1261,7 @@ elif pagina == "👤 Visão do Colaborador":
                   or "Aplicador do Treinamento",
               )
 
+              # 2. Upload do PDF para o Storage do Supabase
               salvar_arquivo_supabase(
                   nome_cert_auto, pdf_bytes_cert.getvalue()
               )
@@ -1264,6 +1279,7 @@ elif pagina == "👤 Visão do Colaborador":
                   "custo_real": 0.0,
               }
 
+              # 3. Busca o registro e faz update filtrando pelo ID único da linha
               check_db = (
                   supabase.table("registros")
                   .select("id")
@@ -1280,6 +1296,7 @@ elif pagina == "👤 Visão do Colaborador":
               else:
                 supabase.table("registros").insert(payload).execute()
 
+              st.cache_data.clear()
               st.success(f"🎉 Certificado gerado para '{nome_curso}'!")
               st.rerun()
 
@@ -1301,6 +1318,7 @@ elif pagina == "👤 Visão do Colaborador":
                     "id", r_del["id"]
                 ).execute()
 
+              st.cache_data.clear()
               st.warning(
                   f"🗑️ Registro e certificado de '{nome_curso}' removidos!"
               )
@@ -1459,6 +1477,7 @@ elif pagina == "✍️ Lançar Treinamento":
             "LANÇAMENTO DE TREINAMENTO",
             f"Treino ID {tid} para Colab ID {cid}",
         )
+        st.cache_data.clear()
         st.success(
             "🎉 Treinamento gravado e Certificado"
             f" `{nome_cert_auto}` gerado com sucesso!"
@@ -1547,6 +1566,7 @@ elif pagina == "📚 Catálogo de Treinamentos":
               "INCLUSÃO TREINAMENTO",
               f"Incluído curso: {n_curso}",
           )
+          st.cache_data.clear()
           st.success(f"Treinamento '{n_curso}' adicionado com sucesso!")
           st.rerun()
 
@@ -1628,6 +1648,7 @@ elif pagina == "📚 Catálogo de Treinamentos":
               "EDIÇÃO TREINAMENTO",
               f"Atualizado curso ID {row_e['id']}: {e_curso}",
           )
+          st.cache_data.clear()
           st.success("Cadastro do treinamento atualizado no catálogo!")
           st.rerun()
 
@@ -1927,6 +1948,7 @@ elif pagina == "👥 Gestão de Colaboradores":
                 "INCLUSÃO COLABORADOR",
                 f"Incluído: {n_nome} ({setor_final})",
             )
+            st.cache_data.clear()
             st.success(
                 f"Colaborador '{n_nome}' incluído no setor '{setor_final}'"
                 " com sucesso!"
@@ -2000,6 +2022,7 @@ elif pagina == "👥 Gestão de Colaboradores":
               "EDIÇÃO COLABORADOR",
               f"Editado ID {row_edit['id']}: '{e_nome}'",
           )
+          st.cache_data.clear()
           st.success("Cadastro atualizado com sucesso!")
           st.rerun()
 
@@ -2032,6 +2055,7 @@ elif pagina == "👥 Gestão de Colaboradores":
             "EXCLUSÃO COLABORADOR",
             f"Excluído colaborador ID {row_del['id']}: {row_del['nome']}",
         )
+        st.cache_data.clear()
         st.success("Colaborador removido com sucesso!")
         st.rerun()
 
@@ -2097,6 +2121,7 @@ elif pagina == "🎯 Matriz por Cargo (LNT)":
             "ATUALIZAÇÃO LNT",
             f"Atualizada matriz para o cargo {cargo_sel}",
         )
+        st.cache_data.clear()
         st.success(f"Matriz LNT para `{cargo_sel}` salva com sucesso!")
 
 # -------------------------------------------------------------------
