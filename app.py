@@ -615,7 +615,7 @@ if pagina == "📊 Dashboard Executivo":
       )
 
       k1.metric("👥 Colaboradores", df_colabs_total)
-      k2.metric("⏱️️ Horas Capacitadas", f"{total_horas:.1f}h")
+      k2.metric("⏱️ Horas Capacitadas", f"{total_horas:.1f}h")
       k3.metric("📈 Taxa Conformidade", f"{tx_conformidade:.1f}%")
       k4.metric("🟢 Em Dia", conformes)
       k5.metric("🔴 Vencidos", nao_conformes, delta_color="inverse")
@@ -716,6 +716,7 @@ elif pagina == "👤 Visão do Colaborador":
             "Forms": r.get("arquivo_forms"),
             "Instrutor": r.get("instrutor_nome"),
             "AplicadorCargo": r.get("aplicador_cargo"),
+            "StatusPlanilha": r.get("status_planilha"),
         })
     df_realizados = pd.DataFrame(flat_ind)
 
@@ -731,23 +732,22 @@ elif pagina == "👤 Visão do Colaborador":
     )
 
     st.subheader("📋 Gestão Individual por Treinamento (Supabase Cloud Sync)")
-    ids_realizados = (
-        df_realizados["TreinamentoID"].tolist()
-        if not df_realizados.empty
-        else []
-    )
 
     for _, r_t in df_lnt_cargo.iterrows():
       tid = int(r_t["id"])
       nome_curso = r_t["nome_curso"]
       ch_val = r_t["carga_horaria"]
 
-      is_concluido = tid in ids_realizados
-      reg_info = (
-          df_realizados[df_realizados["TreinamentoID"] == tid].iloc[0]
-          if is_concluido
-          else None
+      # Verifica no banco se existe registro ativo e concluído
+      reg_match = (
+          df_realizados[df_realizados["TreinamentoID"] == tid]
+          if not df_realizados.empty
+          else pd.DataFrame()
       )
+      is_concluido = not reg_match.empty and (
+          reg_match.iloc[0].get("StatusPlanilha") == "Concluído"
+      )
+      reg_info = reg_match.iloc[0] if not reg_match.empty else None
 
       with st.container():
         st.markdown(
@@ -758,11 +758,13 @@ elif pagina == "👤 Visão do Colaborador":
         )
 
         with col_c1:
+          # Salva a escolha do usuário na chave dinâmica do session_state
+          key_st = f"status_{cid}_{tid}"
           novo_status = st.selectbox(
               "Status",
               ["🔴 Pendente", "🟢 Concluído"],
               index=1 if is_concluido else 0,
-              key=f"status_{cid}_{tid}",
+              key=key_st,
           )
         with col_c2:
           dt_def = (
@@ -834,15 +836,18 @@ elif pagina == "👤 Visão do Colaborador":
                     key=f"dl_f_{cid}_{tid}",
                 )
 
-        # SALVAMENTO COMPLETO
+        # SALVAMENTO USANDO O ESTADO DA SESSÃO
         if st.button(
             f"💾 Salvar Atualização de '{nome_curso}'",
             key=f"btn_save_{cid}_{tid}",
         ):
           dt_str = nova_data.strftime("%Y-%m-%d")
+          status_escolhido = st.session_state.get(
+              f"status_{cid}_{tid}", novo_status
+          )
 
           try:
-            if novo_status == "🟢 Concluído":
+            if status_escolhido == "🟢 Concluído":
               nome_forms_salvo = (
                   reg_info["Forms"] if is_concluido else "Sem anexo"
               )
@@ -907,8 +912,7 @@ elif pagina == "👤 Visão do Colaborador":
               st.success(f"🎉 Certificado gerado para '{nome_curso}'!")
               st.rerun()
 
-            elif novo_status == "🔴 Pendente":
-              # Se existia no banco, remove arquivos do Storage e deleta o registro
+            elif status_escolhido == "🔴 Pendente":
               check_db = (
                   supabase.table("registros")
                   .select("id, arquivo_evidencia, arquivo_forms")
@@ -927,7 +931,7 @@ elif pagina == "👤 Visão do Colaborador":
                 ).execute()
 
               st.cache_data.clear()
-              st.warning(f"🗑️ Registro e certificado de '{nome_curso}' removidos!")
+              st.warning(f"🗑️️ Registro e certificado de '{nome_curso}' removidos!")
               st.rerun()
 
           except Exception as err:
