@@ -669,7 +669,7 @@ elif pagina == "👤 Visão do Colaborador":
 
     total_mapeados = len(df_lnt_cargo)
 
-    # Carrega todos os registros do colaborador sem restrição de ano para exibir os botões de ações
+    # Busca sem restricao de data para garantir exibicao do certificado em memoria
     res_ind = (
         supabase.table("registros")
         .select("*, treinamentos(*)")
@@ -686,7 +686,7 @@ elif pagina == "👤 Visão do Colaborador":
             "Classificacao": r["treinamentos"]["classificacao"],
             "Horas": float(r["treinamentos"]["carga_horaria"] or 0),
             "DataRealizacao": r.get("data_realizacao"),
-            "ValidadeMeses": int(r["validade_meses"] or 12),
+            "ValidadeMeses": int(r.get("validade_meses") or 12),
             "Evidencia": r.get("arquivo_evidencia"),
             "Forms": r.get("arquivo_forms"),
             "Instrutor": r.get("instrutor_nome"),
@@ -699,7 +699,7 @@ elif pagina == "👤 Visão do Colaborador":
         <div class="colab-card">
             <h3 style="margin-top:0;">👤 <b>{colab_info['nome']}</b></h3>
             <p style="margin-bottom:5px;">💼 <b>Cargo:</b> {colab_info['cargo'] or 'N/A'} &nbsp;|&nbsp; 👔 <b>Gestor:</b> {colab_info['gestor'] or 'N/A'}</p>
-            <p style="margin-bottom:0;">🏢 <b>Departamento:</b> {colab_info['departamento']} &nbsp;|&nbsp; ✉️ <b>E-mail:</b> {colab_info['email'] or 'N/A'}</p>
+            <p style="margin-bottom:0;">🏢 <b>Departamento:</b> {colab_info['departamento']} &nbsp;|&nbsp; ✉️️ <b>E-mail:</b> {colab_info['email'] or 'N/A'}</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -809,7 +809,7 @@ elif pagina == "👤 Visão do Colaborador":
                     key=f"dl_f_{cid}_{tid}",
                 )
 
-        # SALVAMENTO SEGURO
+        # SALVAMENTO COMPLETO
         if st.button(
             f"💾 Salvar Atualização de '{nome_curso}'",
             key=f"btn_save_{cid}_{tid}",
@@ -829,7 +829,7 @@ elif pagina == "👤 Visão do Colaborador":
                     content_type=up_f.type,
                 )
 
-              # 1. Gera o Certificado PDF
+              # 1. Gera o PDF do Certificado
               nome_cert_auto = f"Certificado_AUTO_{cid}_{tid}_{dt_str}.pdf"
               pdf_bytes_cert = gerar_pdf_certificado(
                   colab_nome=str(colab_info["nome"]),
@@ -861,38 +861,39 @@ elif pagina == "👤 Visão do Colaborador":
                   "custo_real": 0.0,
               }
 
-              # 3. Atualiza ou insere filtrando por ID obtido da memória
-              if is_concluido and reg_info is not None and reg_info.get("ID"):
-                reg_id_existente = int(reg_info["ID"])
+              # 3. Garante atualização do registro ou insere um novo
+              check_db = (
+                  supabase.table("registros")
+                  .select("id")
+                  .eq("colaborador_id", cid)
+                  .eq("treinamento_id", tid)
+                  .execute()
+              )
+
+              if check_db.data:
+                reg_id_existente = check_db.data[0]["id"]
                 supabase.table("registros").update(payload).eq(
                     "id", reg_id_existente
                 ).execute()
               else:
                 supabase.table("registros").insert(payload).execute()
 
-              st.cache_data.clear()
               st.success(f"🎉 Certificado gerado para '{nome_curso}'!")
               st.rerun()
 
             elif novo_status == "🔴 Pendente" and is_concluido:
-              # Elimina arquivos do Storage
+              # Remove do Storage
               if reg_info is not None:
                 if reg_info.get("Evidencia"):
                   deletar_arquivo_supabase(reg_info["Evidencia"])
                 if reg_info.get("Forms"):
                   deletar_arquivo_supabase(reg_info["Forms"])
 
-              # Elimina o registro
-              if reg_info is not None and reg_info.get("ID"):
-                supabase.table("registros").delete().eq(
-                    "id", int(reg_info["ID"])
-                ).execute()
-              else:
-                supabase.table("registros").delete().eq(
-                    "colaborador_id", cid
-                ).eq("treinamento_id", tid).execute()
+              # Remove do Banco de Dados
+              supabase.table("registros").delete().eq(
+                  "colaborador_id", cid
+              ).eq("treinamento_id", tid).execute()
 
-              st.cache_data.clear()
               st.warning(f"🗑️ Registro e certificado de '{nome_curso}' removidos!")
               st.rerun()
 
