@@ -186,7 +186,7 @@ with st.sidebar:
   perfil = st.session_state["perfil_usuario"]
   nome_u = st.session_state["nome_usuario"]
 
-  st.markdown(f"👤 **{nome_u}**\n\n🛡️ *Perfil: {perfil}*")
+  st.markdown(f"👤 **{nome_u}**\n\n🛡️️ *Perfil: {perfil}*")
 
   if st.button("🚪 Sair (Logout)", use_container_width=True):
     registrar_log(nome_u, "LOGOUT", "Sessão encerrada.")
@@ -465,7 +465,7 @@ def salvar_arquivo_supabase(
         file_options={"content-type": content_type, "upsert": "true"},
     )
     return path_name
-  except Exception as e:
+  except Exception:
     return path_name
 
 
@@ -809,7 +809,7 @@ elif pagina == "👤 Visão do Colaborador":
                     key=f"dl_f_{cid}_{tid}",
                 )
 
-        # LÓGICA CORRIGIDA DE GRAVAÇÃO E GERAÇÃO DO CERTIFICADO
+        # SALVAMENTO COM UPSERT (EVITA DUPLICATE KEY VIOLATION NO SUPABASE)
         if st.button(
             f"💾 Salvar Atualização de '{nome_curso}'",
             key=f"btn_save_{cid}_{tid}",
@@ -829,7 +829,7 @@ elif pagina == "👤 Visão do Colaborador":
                     content_type=up_f.type,
                 )
 
-              # Gera o Certificado PDF em memória
+              # Gera o certificado em PDF
               nome_cert_auto = f"Certificado_AUTO_{cid}_{tid}_{dt_str}.pdf"
               pdf_bytes_cert = gerar_pdf_certificado(
                   colab_nome=colab_info["nome"],
@@ -841,7 +841,7 @@ elif pagina == "👤 Visão do Colaborador":
                   aplicador_cargo=limpar_valor(cargo_aplicador),
               )
 
-              # Salva o certificado gerado no Storage do Supabase
+              # Guarda o PDF no Storage
               salvar_arquivo_supabase(
                   nome_cert_auto, pdf_bytes_cert.getvalue()
               )
@@ -859,35 +859,32 @@ elif pagina == "👤 Visão do Colaborador":
                   "custo_real": 0.0,
               }
 
-              # Deleta registro antigo para evitar duplicidade de chave composta
-              supabase.table("registros").delete().eq(
-                  "colaborador_id", cid
-              ).eq("treinamento_id", tid).execute()
-
-              # Insere o novo registro atualizado
-              supabase.table("registros").insert(payload).execute()
+              # UPSERT que atualiza o registo mantendo a chave primária
+              supabase.table("registros").upsert(
+                  payload, on_conflict="colaborador_id,treinamento_id"
+              ).execute()
 
               st.success(f"🎉 Certificado gerado para '{nome_curso}'!")
               st.rerun()
 
             elif novo_status == "🔴 Pendente" and is_concluido:
-              # Apaga arquivos do Storage se existirem
+              # Elimina ficheiros do Storage
               if reg_info is not None:
                 if reg_info.get("Evidencia"):
                   deletar_arquivo_supabase(reg_info["Evidencia"])
                 if reg_info.get("Forms"):
                   deletar_arquivo_supabase(reg_info["Forms"])
 
-              # Deleta a linha do banco de dados
+              # Elimina a linha correspondente da base de dados
               supabase.table("registros").delete().eq(
                   "colaborador_id", cid
               ).eq("treinamento_id", tid).execute()
 
-              st.warning(f"🗑️ Registro e certificado de '{nome_curso}' removidos!")
+              st.warning(f"🗑️ Registo e certificado de '{nome_curso}' removidos!")
               st.rerun()
 
           except Exception as err:
-            st.error(f"Erro na gravação do registro: {err}")
+            st.error(f"Erro na gravação do registo: {err}")
 
         st.divider()
 
