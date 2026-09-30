@@ -28,7 +28,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Estilização CSS Original
+# Estilização CSS
 st.markdown(
     """
 <style>
@@ -824,7 +824,7 @@ if pagina == "📊 Dashboard Executivo":
       )
 
       k1.metric("👥 Colaboradores", df_colabs_total)
-      k2.metric("⏱️️ Horas Capacitadas", f"{total_horas:.1f}h")
+      k2.metric("⏱ Horas Capacitadas", f"{total_horas:.1f}h")
       k3.metric("📈 Taxa Conformidade", f"{tx_conformidade:.1f}%")
       k4.metric("🟢 Em Dia", conformes)
       k5.metric("🔴 Vencidos", nao_conformes, delta_color="inverse")
@@ -862,223 +862,353 @@ if pagina == "📊 Dashboard Executivo":
         st.plotly_chart(fig_bar, use_container_width=True)
 
 # -------------------------------------------------------------------
-# 2. VISÃO DO COLABORADOR (USANDO ST.FORM ISOLADO POR LINHA)
+# 2. VISÃO DO COLABORADOR
 # -------------------------------------------------------------------
-# --- SUBSTITUIR DENTRO DO LOOP FOR DA VISÃO DO COLABORADOR ---
-
-for _, r_t in df_lnt_cargo.iterrows():
-  tid = int(r_t["id"])
-  nome_curso = r_t["nome_curso"]
-  ch_val = r_t["carga_horaria"]
-
-  reg_match = (
-      df_realizados[df_realizados["TreinamentoID"] == tid]
-      if not df_realizados.empty
-      else pd.DataFrame()
+elif pagina == "👤 Visão do Colaborador":
+  st.markdown(
+      '<div class="main-header">👤 Prontuário Individual e Matriz de'
+      f" Participação ({ano_exercicio})</div>",
+      unsafe_allow_html=True,
   )
-  is_concluido = not reg_match.empty and (
-      reg_match.iloc[0].get("StatusPlanilha") == "Concluído"
-  )
-  reg_info = reg_match.iloc[0] if not reg_match.empty else None
 
-  key_status = f"status_{cid}_{tid}"
+  res_c = supabase.table("colaboradores").select("*").order("nome").execute()
+  df_colabs = pd.DataFrame(res_c.data)
 
-  # Inicializa a chave no session_state apenas se ainda não existir
-  if key_status not in st.session_state:
-    st.session_state[key_status] = (
-        "🟢 Concluído" if is_concluido else "🔴 Pendente"
+  if df_colabs.empty:
+    st.warning("Nenhum colaborador cadastrado.")
+  else:
+    colab_nome = st.selectbox(
+        "🔎 Selecione o Colaborador:", df_colabs["nome"].tolist()
+    )
+    colab_info = df_colabs[df_colabs["nome"] == colab_nome].iloc[0]
+    cid = int(colab_info["id"])
+
+    res_lnt = (
+        supabase.table("matriz_cargo_treinamento")
+        .select("treinamento_id, treinamentos(*)")
+        .eq("cargo", colab_info["cargo"])
+        .execute()
+    )
+    if res_lnt.data:
+      df_lnt_cargo = pd.DataFrame([r["treinamentos"] for r in res_lnt.data])
+    else:
+      res_all_t = supabase.table("treinamentos").select("*").execute()
+      df_lnt_cargo = pd.DataFrame(res_all_t.data)
+
+    total_mapeados = len(df_lnt_cargo)
+
+    res_ind = (
+        supabase.table("registros")
+        .select("*, treinamentos(*)")
+        .eq("colaborador_id", cid)
+        .execute()
+    )
+    flat_ind = []
+    if res_ind.data:
+      for r in res_ind.data:
+        flat_ind.append({
+            "ID": r.get("id"),
+            "TreinamentoID": r["treinamento_id"],
+            "Treinamento": (
+                r["treinamentos"]["nome_curso"] if r.get("treinamentos") else ""
+            ),
+            "Classificacao": (
+                r["treinamentos"]["classificacao"]
+                if r.get("treinamentos")
+                else ""
+            ),
+            "Horas": float(
+                r["treinamentos"]["carga_horaria"]
+                if r.get("treinamentos")
+                else 0
+            ),
+            "DataRealizacao": r.get("data_realizacao"),
+            "ValidadeMeses": int(r.get("validade_meses") or 12),
+            "Evidencia": r.get("arquivo_evidencia"),
+            "Forms": r.get("arquivo_forms"),
+            "Instrutor": r.get("instrutor_nome"),
+            "AplicadorCargo": r.get("aplicador_cargo"),
+            "StatusPlanilha": r.get("status_planilha"),
+        })
+    df_realizados = pd.DataFrame(flat_ind)
+
+    df_concluidos = (
+        df_realizados[df_realizados["StatusPlanilha"] == "Concluído"]
+        if not df_realizados.empty
+        else pd.DataFrame()
+    )
+    qtd_realizados = len(df_concluidos)
+    qtd_pendentes = max(0, total_mapeados - qtd_realizados)
+    pct_concluido = (
+        (qtd_realizados / total_mapeados * 100) if total_mapeados > 0 else 0.0
+    )
+    horas_acumuladas = (
+        df_concluidos["Horas"].sum() if not df_concluidos.empty else 0.0
     )
 
-  with st.form(key=f"form_treino_{cid}_{tid}"):
-    st.markdown(f"#### 📚 {nome_curso} ({ch_val}h - {r_t['classificacao']})")
-    col_c1, col_c2, col_c3, col_c4, col_c5, col_c6 = st.columns(
-        [2, 2, 2, 2, 2.5, 2]
+    c_f1, c_f2 = st.columns([3, 1])
+    with c_f1:
+      st.markdown(
+          f"""
+            <div class="colab-card">
+                <h3 style="margin-top:0;">👤 <b>{colab_info['nome']}</b></h3>
+                <p style="margin-bottom:5px;">💼 <b>Cargo:</b> {colab_info['cargo'] or 'Não informado'} &nbsp;|&nbsp; 👔 <b>Gestor Direto:</b> {colab_info['gestor'] or 'Não informado'}</p>
+                <p style="margin-bottom:0;">🏢 <b>Departamento:</b> {colab_info['departamento']} &nbsp;|&nbsp; ✉️ <b>E-mail:</b> {colab_info['email'] or 'N/A'}</p>
+            </div>
+            """,
+          unsafe_allow_html=True,
+      )
+
+    with c_f2:
+      st.write(f"📄 **Prontuário {ano_exercicio}**")
+      pdf_bytes = gerar_pdf_prontuario(
+          colab_info, df_concluidos, total_mapeados, ano_exercicio
+      )
+      st.download_button(
+          label="🖨️ Baixar Prontuário PDF",
+          data=pdf_bytes,
+          file_name=(
+              f"Prontuario_{colab_info['nome'].replace(' ', '_')}_{ano_exercicio}.pdf"
+          ),
+          mime="application/pdf",
+          use_container_width=True,
+      )
+
+    st.subheader(
+        f"📊 Evolução de Treinamentos Mapeados ({ano_exercicio})"
     )
-
-    with col_c1:
-      # O selectbox lê diretamente o valor do session_state sem resetar pelo index
-      novo_status = st.selectbox(
-          "Status",
-          options=["🔴 Pendente", "🟢 Concluído"],
-          key=key_status,
-      )
-
-    with col_c2:
-      dt_def = (
-          pd.to_datetime(reg_info["DataRealizacao"]).date()
-          if is_concluido and reg_info["DataRealizacao"]
-          else dt_module.date.today()
-      )
-      nova_data = st.date_input(
-          "Data Aplicação", value=dt_def, key=f"data_{cid}_{tid}"
-      )
-
-    with col_c3:
-      inst_def = (
-          reg_info["Instrutor"]
-          if (is_concluido and reg_info["Instrutor"])
-          else (r_t.get("aplicador_padrao") or "Aplicador Técnico")
-      )
-      nome_aplicador = st.text_input(
-          "Nome Aplicador",
-          value=limpar_valor(inst_def) or "",
-          key=f"inst_{cid}_{tid}",
-      )
-
-    with col_c4:
-      cargo_def = (
-          reg_info["AplicadorCargo"]
-          if (is_concluido and reg_info.get("AplicadorCargo"))
-          else (r_t.get("aplicador_cargo_padrao") or "Aplicador do Treinamento")
-      )
-      cargo_aplicador = st.text_input(
-          "Cargo Aplicador",
-          value=limpar_valor(cargo_def) or "",
-          key=f"acargo_{cid}_{tid}",
-      )
-
-    with col_c5:
-      up_f = st.file_uploader(
-          "📎 Anexar Forms/Lista",
-          type=["pdf", "png", "jpg"],
-          key=f"up_{cid}_{tid}",
-      )
-
-    with col_c6:
-      st.write("📄 **Ações / Download:**")
-      if is_concluido and reg_info is not None:
-        cert_file = reg_info["Evidencia"]
-        if cert_file:
-          b_cert = baixar_arquivo_supabase(cert_file)
-          if b_cert:
-            st.download_button(
-                "🎓 Baixar Certificado",
-                b_cert,
-                file_name=cert_file,
-                key=f"dl_c_{cid}_{tid}",
-            )
-
-        forms_file = reg_info["Forms"]
-        if forms_file and str(forms_file).strip().lower() not in [
-            "sem anexo",
-            "none",
-            "nan",
-            "",
-        ]:
-          b_forms = baixar_arquivo_supabase(forms_file)
-          if b_forms:
-            st.download_button(
-                "📎 Baixar Forms/Lista",
-                b_forms,
-                file_name=forms_file,
-                key=f"dl_f_{cid}_{tid}",
-            )
-
-    btn_submit = st.form_submit_button(
-        f"💾 Salvar Atualização de '{nome_curso}'",
-        use_container_width=True,
+    st.write(
+        f"**Progresso:** `{qtd_realizados}` de `{total_mapeados}` cursos exigidos"
+        f" concluídos em {ano_exercicio} (**{pct_concluido:.1f}%**)"
     )
+    st.progress(min(pct_concluido / 100.0, 1.0))
 
-    if btn_submit:
-      dt_str = nova_data.strftime("%Y-%m-%d")
-
-      try:
-        if novo_status == "🟢 Concluído":
-          nome_forms_salvo = (
-              reg_info["Forms"]
-              if is_concluido and reg_info is not None
-              else "Sem anexo"
-          )
-          if up_f is not None:
-            nome_forms_salvo = f"Forms_{cid}_{tid}_{dt_str}_{up_f.name}"
-            salvar_arquivo_supabase(
-                nome_forms_salvo,
-                up_f.getvalue(),
-                content_type=up_f.type,
-            )
-
-          nome_cert_auto = f"Certificado_AUTO_{cid}_{tid}_{dt_str}.pdf"
-          pdf_bytes_cert = gerar_pdf_certificado(
-              colab_nome=str(colab_info["nome"]),
-              colab_cargo=str(colab_info["cargo"] or ""),
-              curso_nome=str(nome_curso),
-              carga_horaria=str(ch_val),
-              data_realizacao=dt_str,
-              aplicador_nome=limpar_valor(nome_aplicador)
-              or "Aplicador Técnico",
-              aplicador_cargo=limpar_valor(cargo_aplicador)
-              or "Aplicador do Treinamento",
-          )
-
-          salvar_arquivo_supabase(
-              nome_cert_auto, pdf_bytes_cert.getvalue()
-          )
-
-          payload = {
-              "colaborador_id": cid,
-              "treinamento_id": tid,
-              "data_realizacao": dt_str,
-              "validade_meses": 12,
-              "status_planilha": "Concluído",
-              "arquivo_evidencia": nome_cert_auto,
-              "arquivo_forms": nome_forms_salvo,
-              "instrutor_nome": limpar_valor(nome_aplicador),
-              "aplicador_cargo": limpar_valor(cargo_aplicador),
-              "custo_real": 0.0,
-          }
-
-          check_db = (
-              supabase.table("registros")
-              .select("id")
-              .eq("colaborador_id", cid)
-              .eq("treinamento_id", tid)
-              .execute()
-          )
-
-          if check_db.data:
-            reg_id_existente = check_db.data[0]["id"]
-            supabase.table("registros").update(payload).eq(
-                "id", reg_id_existente
-            ).execute()
-          else:
-            supabase.table("registros").insert(payload).execute()
-
-          # Atualiza o estado da sessão após gravação concluída
-          st.session_state[key_status] = "🟢 Concluído"
-          st.cache_data.clear()
-          st.success(f"🎉 Certificado gerado para '{nome_curso}'!")
-          st.rerun()
-
-        elif novo_status == "🔴 Pendente":
-          check_db = (
-              supabase.table("registros")
-              .select("id, arquivo_evidencia, arquivo_forms")
-              .eq("colaborador_id", cid)
-              .eq("treinamento_id", tid)
-              .execute()
-          )
-
-          if check_db.data:
-            r_del = check_db.data[0]
-            deletar_arquivo_supabase(r_del.get("arquivo_evidencia"))
-            deletar_arquivo_supabase(r_del.get("arquivo_forms"))
-
-            supabase.table("registros").delete().eq(
-                "id", r_del["id"]
-            ).execute()
-
-          # Atualiza o estado da sessão após remoção concluída
-          st.session_state[key_status] = "🔴 Pendente"
-          st.cache_data.clear()
-          st.warning(
-              f"🗑️ Registro e certificado de '{nome_curso}' removidos!"
-          )
-          st.rerun()
-
-      except Exception as err:
-        st.error(f"Erro na gravação do registro: {err}")
+    kc1, kc2, k3, kc4 = st.columns(4)
+    kc1.metric("🎯 Exigidos p/ Cargo", f"{total_mapeados} Cursos")
+    kc2.metric("✅ Concluídos no Ano", f"{qtd_realizados} Cursos")
+    k3.metric("⏳ Pendentes no Ano", f"{qtd_pendentes} Cursos")
+    kc4.metric("⏱ Horas Cumpridas", f"{horas_acumuladas:.1f}h")
 
     st.divider()
+    st.subheader(
+        "📋 Gestão Individual por Treinamento (Status, Dados do Aplicador e"
+        " Uploads)"
+    )
+
+    for _, r_t in df_lnt_cargo.iterrows():
+      tid = int(r_t["id"])
+      nome_curso = r_t["nome_curso"]
+      ch_val = r_t["carga_horaria"]
+
+      reg_match = (
+          df_realizados[df_realizados["TreinamentoID"] == tid]
+          if not df_realizados.empty
+          else pd.DataFrame()
+      )
+      is_concluido = not reg_match.empty and (
+          reg_match.iloc[0].get("StatusPlanilha") == "Concluído"
+      )
+      reg_info = reg_match.iloc[0] if not reg_match.empty else None
+
+      key_status = f"status_{cid}_{tid}"
+
+      if key_status not in st.session_state:
+        st.session_state[key_status] = (
+            "🟢 Concluído" if is_concluido else "🔴 Pendente"
+        )
+
+      with st.form(key=f"form_treino_{cid}_{tid}"):
+        st.markdown(
+            f"#### 📚 {nome_curso} ({ch_val}h - {r_t['classificacao']})"
+        )
+        col_c1, col_c2, col_c3, col_c4, col_c5, col_c6 = st.columns(
+            [2, 2, 2, 2, 2.5, 2]
+        )
+
+        with col_c1:
+          novo_status = st.selectbox(
+              "Status",
+              options=["🔴 Pendente", "🟢 Concluído"],
+              key=key_status,
+          )
+
+        with col_c2:
+          dt_def = (
+              pd.to_datetime(reg_info["DataRealizacao"]).date()
+              if is_concluido and reg_info["DataRealizacao"]
+              else dt_module.date.today()
+          )
+          nova_data = st.date_input(
+              "Data Aplicação", value=dt_def, key=f"data_{cid}_{tid}"
+          )
+
+        with col_c3:
+          inst_def = (
+              reg_info["Instrutor"]
+              if (is_concluido and reg_info["Instrutor"])
+              else (r_t.get("aplicador_padrao") or "Aplicador Técnico")
+          )
+          nome_aplicador = st.text_input(
+              "Nome Aplicador",
+              value=limpar_valor(inst_def) or "",
+              key=f"inst_{cid}_{tid}",
+          )
+
+        with col_c4:
+          cargo_def = (
+              reg_info["AplicadorCargo"]
+              if (is_concluido and reg_info.get("AplicadorCargo"))
+              else (
+                  r_t.get("aplicador_cargo_padrao")
+                  or "Aplicador do Treinamento"
+              )
+          )
+          cargo_aplicador = st.text_input(
+              "Cargo Aplicador",
+              value=limpar_valor(cargo_def) or "",
+              key=f"acargo_{cid}_{tid}",
+          )
+
+        with col_c5:
+          up_f = st.file_uploader(
+              "📎 Anexar Forms/Lista",
+              type=["pdf", "png", "jpg"],
+              key=f"up_{cid}_{tid}",
+          )
+
+        with col_c6:
+          st.write("📄 **Ações / Download:**")
+          if is_concluido and reg_info is not None:
+            cert_file = reg_info["Evidencia"]
+            if cert_file:
+              b_cert = baixar_arquivo_supabase(cert_file)
+              if b_cert:
+                st.download_button(
+                    "🎓 Baixar Certificado",
+                    b_cert,
+                    file_name=cert_file,
+                    key=f"dl_c_{cid}_{tid}",
+                )
+
+            forms_file = reg_info["Forms"]
+            if forms_file and str(forms_file).strip().lower() not in [
+                "sem anexo",
+                "none",
+                "nan",
+                "",
+            ]:
+              b_forms = baixar_arquivo_supabase(forms_file)
+              if b_forms:
+                st.download_button(
+                    "📎 Baixar Forms/Lista",
+                    b_forms,
+                    file_name=forms_file,
+                    key=f"dl_f_{cid}_{tid}",
+                )
+
+        btn_submit = st.form_submit_button(
+            f"💾 Salvar Atualização de '{nome_curso}'",
+            use_container_width=True,
+        )
+
+        if btn_submit:
+          dt_str = nova_data.strftime("%Y-%m-%d")
+
+          try:
+            if novo_status == "🟢 Concluído":
+              nome_forms_salvo = (
+                  reg_info["Forms"]
+                  if is_concluido and reg_info is not None
+                  else "Sem anexo"
+              )
+              if up_f is not None:
+                nome_forms_salvo = f"Forms_{cid}_{tid}_{dt_str}_{up_f.name}"
+                salvar_arquivo_supabase(
+                    nome_forms_salvo,
+                    up_f.getvalue(),
+                    content_type=up_f.type,
+                )
+
+              nome_cert_auto = f"Certificado_AUTO_{cid}_{tid}_{dt_str}.pdf"
+              pdf_bytes_cert = gerar_pdf_certificado(
+                  colab_nome=str(colab_info["nome"]),
+                  colab_cargo=str(colab_info["cargo"] or ""),
+                  curso_nome=str(nome_curso),
+                  carga_horaria=str(ch_val),
+                  data_realizacao=dt_str,
+                  aplicador_nome=limpar_valor(nome_aplicador)
+                  or "Aplicador Técnico",
+                  aplicador_cargo=limpar_valor(cargo_aplicador)
+                  or "Aplicador do Treinamento",
+              )
+
+              salvar_arquivo_supabase(
+                  nome_cert_auto, pdf_bytes_cert.getvalue()
+              )
+
+              payload = {
+                  "colaborador_id": cid,
+                  "treinamento_id": tid,
+                  "data_realizacao": dt_str,
+                  "validade_meses": 12,
+                  "status_planilha": "Concluído",
+                  "arquivo_evidencia": nome_cert_auto,
+                  "arquivo_forms": nome_forms_salvo,
+                  "instrutor_nome": limpar_valor(nome_aplicador),
+                  "aplicador_cargo": limpar_valor(cargo_aplicador),
+                  "custo_real": 0.0,
+              }
+
+              check_db = (
+                  supabase.table("registros")
+                  .select("id")
+                  .eq("colaborador_id", cid)
+                  .eq("treinamento_id", tid)
+                  .execute()
+              )
+
+              if check_db.data:
+                reg_id_existente = check_db.data[0]["id"]
+                supabase.table("registros").update(payload).eq(
+                    "id", reg_id_existente
+                ).execute()
+              else:
+                supabase.table("registros").insert(payload).execute()
+
+              st.session_state[key_status] = "🟢 Concluído"
+              st.cache_data.clear()
+              st.success(f"🎉 Certificado gerado para '{nome_curso}'!")
+              st.rerun()
+
+            elif novo_status == "🔴 Pendente":
+              check_db = (
+                  supabase.table("registros")
+                  .select("id, arquivo_evidencia, arquivo_forms")
+                  .eq("colaborador_id", cid)
+                  .eq("treinamento_id", tid)
+                  .execute()
+              )
+
+              if check_db.data:
+                r_del = check_db.data[0]
+                deletar_arquivo_supabase(r_del.get("arquivo_evidencia"))
+                deletar_arquivo_supabase(r_del.get("arquivo_forms"))
+
+                supabase.table("registros").delete().eq(
+                    "id", r_del["id"]
+                ).execute()
+
+              st.session_state[key_status] = "🔴 Pendente"
+              st.cache_data.clear()
+              st.warning(
+                  f"🗑️ Registro e certificado de '{nome_curso}' removidos!"
+              )
+              st.rerun()
+
+          except Exception as err:
+            st.error(f"Erro na gravação do registro: {err}")
+
+        st.divider()
 
 # -------------------------------------------------------------------
 # 3. LANÇAR TREINAMENTO
@@ -1228,6 +1358,7 @@ elif pagina == "✍️ Lançar Treinamento":
             "LANÇAMENTO DE TREINAMENTO",
             f"Treino ID {tid} para Colab ID {cid}",
         )
+        st.cache_data.clear()
         st.success(
             "🎉 Treinamento gravado e Certificado"
             f" `{nome_cert_auto}` gerado com sucesso!"
@@ -1316,6 +1447,7 @@ elif pagina == "📚 Catálogo de Treinamentos":
               "INCLUSÃO TREINAMENTO",
               f"Incluído curso: {n_curso}",
           )
+          st.cache_data.clear()
           st.success(f"Treinamento '{n_curso}' adicionado com sucesso!")
           st.rerun()
 
@@ -1397,6 +1529,7 @@ elif pagina == "📚 Catálogo de Treinamentos":
               "EDIÇÃO TREINAMENTO",
               f"Atualizado curso ID {row_e['id']}: {e_curso}",
           )
+          st.cache_data.clear()
           st.success("Cadastro do treinamento atualizado no catálogo!")
           st.rerun()
 
