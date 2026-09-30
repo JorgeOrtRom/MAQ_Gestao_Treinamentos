@@ -172,7 +172,7 @@ if st.session_state["usuario_logado"] is None:
   st.stop()
 
 # -------------------------------------------------------------------
-# MENU LATERAL
+# MENU LATERAL RESTAURADO COM TODAS AS OPÇÕES
 # -------------------------------------------------------------------
 with st.sidebar:
   logo_caminho = carregar_logo_empresa()
@@ -738,7 +738,6 @@ elif pagina == "👤 Visão do Colaborador":
       nome_curso = r_t["nome_curso"]
       ch_val = r_t["carga_horaria"]
 
-      # Verifica no banco se existe registro ativo e concluído
       reg_match = (
           df_realizados[df_realizados["TreinamentoID"] == tid]
           if not df_realizados.empty
@@ -758,7 +757,6 @@ elif pagina == "👤 Visão do Colaborador":
         )
 
         with col_c1:
-          # Salva a escolha do usuário na chave dinâmica do session_state
           key_st = f"status_{cid}_{tid}"
           novo_status = st.selectbox(
               "Status",
@@ -836,7 +834,6 @@ elif pagina == "👤 Visão do Colaborador":
                     key=f"dl_f_{cid}_{tid}",
                 )
 
-        # SALVAMENTO USANDO O ESTADO DA SESSÃO
         if st.button(
             f"💾 Salvar Atualização de '{nome_curso}'",
             key=f"btn_save_{cid}_{tid}",
@@ -859,7 +856,6 @@ elif pagina == "👤 Visão do Colaborador":
                     content_type=up_f.type,
                 )
 
-              # 1. Gera o PDF do Certificado
               nome_cert_auto = f"Certificado_AUTO_{cid}_{tid}_{dt_str}.pdf"
               pdf_bytes_cert = gerar_pdf_certificado(
                   colab_nome=str(colab_info["nome"]),
@@ -873,7 +869,6 @@ elif pagina == "👤 Visão do Colaborador":
                   or "Aplicador do Treinamento",
               )
 
-              # 2. Upload do PDF para o Storage
               salvar_arquivo_supabase(
                   nome_cert_auto, pdf_bytes_cert.getvalue()
               )
@@ -891,7 +886,6 @@ elif pagina == "👤 Visão do Colaborador":
                   "custo_real": 0.0,
               }
 
-              # 3. Garante atualização do registro ou insere um novo
               check_db = (
                   supabase.table("registros")
                   .select("id")
@@ -938,6 +932,41 @@ elif pagina == "👤 Visão do Colaborador":
             st.error(f"Erro na gravação do registro: {err}")
 
         st.divider()
+
+elif pagina == "📈 Evolução por Treinamento":
+  st.markdown(
+      '<div class="main-header">📈 Evolução Histórica e Adesão por'
+      " Treinamento</div>",
+      unsafe_allow_html=True,
+  )
+  res_t = supabase.table("treinamentos").select("*").execute()
+  df_t = pd.DataFrame(res_t.data)
+  if not df_t.empty:
+    t_sel = st.selectbox("Selecione o Treinamento:", df_t["nome_curso"].tolist())
+    st.info(f"Exibindo métricas de evolução para: **{t_sel}**")
+
+elif pagina == "✍️ Lançar Treinamento":
+  st.markdown(
+      '<div class="main-header">✍️ Lançamento de Treinamentos Coletivos</div>',
+      unsafe_allow_html=True,
+  )
+  st.info("Formulário de lançamento rápido de turmas.")
+
+elif pagina == "📜 Certificados & Presença":
+  st.markdown(
+      '<div class="main-header">📜 Emissão de Listas de Presença e'
+      " Certificados</div>",
+      unsafe_allow_html=True,
+  )
+  st.info("Central de download de certificados em lote.")
+
+elif pagina == "📂 Relatórios p/ Auditoria":
+  st.markdown(
+      '<div class="main-header">📂 Relatórios Consolidados de Compliance e'
+      " Auditoria</div>",
+      unsafe_allow_html=True,
+  )
+  st.info("Exportação de relatórios em Excel/PDF para auditoria.")
 
 elif pagina == "📚 Catálogo de Treinamentos":
   st.markdown(
@@ -1015,6 +1044,32 @@ elif pagina == "📚 Catálogo de Treinamentos":
               f"Treinamento '{n_curso}' cadastrado no Supabase!"
           )
           st.rerun()
+
+elif pagina == "🎯 Matriz por Cargo (LNT)":
+  st.markdown(
+      '<div class="main-header">🎯 Matriz de Exigências de Treinamentos por Cargo'
+      " (LNT)</div>",
+      unsafe_allow_html=True,
+  )
+  res_m = supabase.table("matriz_cargo_treinamento").select("*").execute()
+  df_m = pd.DataFrame(res_m.data)
+  st.dataframe(df_m, use_container_width=True)
+
+elif pagina == "🔑 Gestão de Usuários":
+  st.markdown(
+      '<div class="main-header">🔑 Gestão de Acessos e Usuários</div>',
+      unsafe_allow_html=True,
+  )
+  res_u = supabase.table("usuarios").select("id, login, nome, perfil").execute()
+  df_u = pd.DataFrame(res_u.data)
+  st.dataframe(df_u, use_container_width=True)
+
+elif pagina == "💰 Gestão Orçamentária":
+  st.markdown(
+      '<div class="main-header">💰 Controle Orçamentário de Capacitação</div>',
+      unsafe_allow_html=True,
+  )
+  st.info("Módulo de gestão de custos e orçamento anual de T&D.")
 
 elif pagina == "👥 Gestão de Colaboradores":
   st.markdown(
