@@ -669,6 +669,7 @@ elif pagina == "👤 Visão do Colaborador":
 
     total_mapeados = len(df_lnt_cargo)
 
+    # Carrega todos os registros do colaborador sem restrição de ano para exibir os botões de ações
     res_ind = (
         supabase.table("registros")
         .select("*, treinamentos(*)")
@@ -678,21 +679,19 @@ elif pagina == "👤 Visão do Colaborador":
     flat_ind = []
     if res_ind.data:
       for r in res_ind.data:
-        dt_r = r.get("data_realizacao")
-        if dt_r and str(dt_r).startswith(str(ano_exercicio)):
-          flat_ind.append({
-              "ID": r.get("id"),
-              "TreinamentoID": r["treinamento_id"],
-              "Treinamento": r["treinamentos"]["nome_curso"],
-              "Classificacao": r["treinamentos"]["classificacao"],
-              "Horas": float(r["treinamentos"]["carga_horaria"] or 0),
-              "DataRealizacao": dt_r,
-              "ValidadeMeses": int(r["validade_meses"] or 12),
-              "Evidencia": r.get("arquivo_evidencia"),
-              "Forms": r.get("arquivo_forms"),
-              "Instrutor": r.get("instrutor_nome"),
-              "AplicadorCargo": r.get("aplicador_cargo"),
-          })
+        flat_ind.append({
+            "ID": r.get("id"),
+            "TreinamentoID": r["treinamento_id"],
+            "Treinamento": r["treinamentos"]["nome_curso"],
+            "Classificacao": r["treinamentos"]["classificacao"],
+            "Horas": float(r["treinamentos"]["carga_horaria"] or 0),
+            "DataRealizacao": r.get("data_realizacao"),
+            "ValidadeMeses": int(r["validade_meses"] or 12),
+            "Evidencia": r.get("arquivo_evidencia"),
+            "Forms": r.get("arquivo_forms"),
+            "Instrutor": r.get("instrutor_nome"),
+            "AplicadorCargo": r.get("aplicador_cargo"),
+        })
     df_realizados = pd.DataFrame(flat_ind)
 
     st.markdown(
@@ -743,7 +742,7 @@ elif pagina == "👤 Visão do Colaborador":
         with col_c2:
           dt_def = (
               pd.to_datetime(reg_info["DataRealizacao"]).date()
-              if is_concluido
+              if is_concluido and reg_info["DataRealizacao"]
               else dt_module.date.today()
           )
           nova_data = st.date_input(
@@ -810,7 +809,7 @@ elif pagina == "👤 Visão do Colaborador":
                     key=f"dl_f_{cid}_{tid}",
                 )
 
-        # SALVAMENTO DIRETO E CORRIGIDO
+        # SALVAMENTO SEGURO
         if st.button(
             f"💾 Salvar Atualização de '{nome_curso}'",
             key=f"btn_save_{cid}_{tid}",
@@ -871,18 +870,19 @@ elif pagina == "👤 Visão do Colaborador":
               else:
                 supabase.table("registros").insert(payload).execute()
 
+              st.cache_data.clear()
               st.success(f"🎉 Certificado gerado para '{nome_curso}'!")
               st.rerun()
 
             elif novo_status == "🔴 Pendente" and is_concluido:
-              # Elimina ficheiros do Storage
+              # Elimina arquivos do Storage
               if reg_info is not None:
                 if reg_info.get("Evidencia"):
                   deletar_arquivo_supabase(reg_info["Evidencia"])
                 if reg_info.get("Forms"):
                   deletar_arquivo_supabase(reg_info["Forms"])
 
-              # Elimina o registo
+              # Elimina o registro
               if reg_info is not None and reg_info.get("ID"):
                 supabase.table("registros").delete().eq(
                     "id", int(reg_info["ID"])
@@ -892,6 +892,7 @@ elif pagina == "👤 Visão do Colaborador":
                     "colaborador_id", cid
                 ).eq("treinamento_id", tid).execute()
 
+              st.cache_data.clear()
               st.warning(f"🗑️ Registro e certificado de '{nome_curso}' removidos!")
               st.rerun()
 
