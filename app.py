@@ -15,7 +15,7 @@ from reportlab.graphics.shapes import Drawing, Circle, String
 
 # Configuração da página corporativa
 st.set_page_config(
-    page_title="Sistema Enterprise de Gestão de Treinamentos - MAQ",
+    page_title="Sistema de Gestão de Treinamentos - MAQ",
     layout="wide",
     page_icon="🛡️",
     initial_sidebar_state="expanded"
@@ -131,7 +131,7 @@ with st.sidebar:
     else:
         st.image("https://img.icons8.com/color/96/verified-badge.png", width=50)
         
-    st.title("MAQ Gestão")
+    st.title("MAQ Gestão de Treinamentos")
     
     perfil = st.session_state["perfil_usuario"]
     nome_u = st.session_state["nome_usuario"]
