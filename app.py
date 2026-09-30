@@ -509,36 +509,52 @@ if pagina == "📊 Dashboard Executivo":
       .execute()
   )
 
+  res_colabs_count = (
+      supabase.table("colaboradores").select("id", count="exact").execute()
+  )
+  df_colabs_total = res_colabs_count.count or 0
+
   if not res_reg.data:
     st.info(
         "💡 Nenhum registro cadastrado no banco de dados para o ano de"
         f" {ano_exercicio}."
     )
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("👥 Colaboradores", df_colabs_total)
+    k2.metric("⏱️ Horas Capacitadas", "0.0h")
+    k3.metric("📈 Taxa Conformidade", "0.0%")
+    k4.metric("🟢 Em Dia", 0)
+    k5.metric("🔴 Vencidos", 0)
   else:
     flat_data = []
     for r in res_reg.data:
       dt_r = r.get("data_realizacao")
+      colab = r.get("colaboradores") or {}
+      treino = r.get("treinamentos") or {}
+
       if dt_r and str(dt_r).startswith(str(ano_exercicio)):
         flat_data.append({
-            "Colaborador": r["colaboradores"]["nome"],
-            "Departamento": r["colaboradores"]["departamento"],
-            "Treinamento": r["treinamentos"]["nome_curso"],
-            "Horas": float(r["treinamentos"]["carga_horaria"] or 0),
-            "Classificacao": r["treinamentos"]["classificacao"],
+            "Colaborador": colab.get("nome", "Desconhecido"),
+            "Departamento": colab.get("departamento", "Geral"),
+            "Treinamento": treino.get("nome_curso", "Geral"),
+            "Horas": float(treino.get("carga_horaria") or 0),
+            "Classificacao": treino.get("classificacao", "Geral"),
             "DataRealizacao": dt_r,
-            "ValidadeMeses": int(r["validade_meses"] or 12),
+            "ValidadeMeses": int(r.get("validade_meses") or 12),
         })
 
     df = pd.DataFrame(flat_data)
-    res_colabs_count = (
-        supabase.table("colaboradores").select("id", count="exact").execute()
-    )
-    df_colabs_total = res_colabs_count.count or 0
 
     if df.empty:
       st.info(
           f"💡 Nenhum registro encontrado para o exercício {ano_exercicio}."
       )
+      k1, k2, k3, k4, k5 = st.columns(5)
+      k1.metric("👥 Colaboradores", df_colabs_total)
+      k2.metric("⏱️ Horas Capacitadas", "0.0h")
+      k3.metric("📈 Taxa Conformidade", "0.0%")
+      k4.metric("🟢 Em Dia", 0)
+      k5.metric("🔴 Vencidos", 0)
     else:
       df["DataRealizacao"] = pd.to_datetime(df["DataRealizacao"])
       df["DataVencimento"] = df.apply(
@@ -547,7 +563,7 @@ if pagina == "📊 Dashboard Executivo":
           axis=1,
       )
       hoje = pd.to_datetime(dt_module.date.today())
-      df["DiasParaVencer"] = (df["DataVencimento"] - hoj).dt.days
+      df["DiasParaVencer"] = (df["DataVencimento"] - hoje).dt.days
 
       def set_status(dias):
         if dias < 0:
@@ -599,7 +615,7 @@ if pagina == "📊 Dashboard Executivo":
       )
 
       k1.metric("👥 Colaboradores", df_colabs_total)
-      k2.metric("⏱️ Horas Capacitadas", f"{total_horas:.1f}h")
+      k2.metric("⏱️️ Horas Capacitadas", f"{total_horas:.1f}h")
       k3.metric("📈 Taxa Conformidade", f"{tx_conformidade:.1f}%")
       k4.metric("🟢 Em Dia", conformes)
       k5.metric("🔴 Vencidos", nao_conformes, delta_color="inverse")
@@ -669,7 +685,6 @@ elif pagina == "👤 Visão do Colaborador":
 
     total_mapeados = len(df_lnt_cargo)
 
-    # Consulta direta dos registros atuais do colaborador
     res_ind = (
         supabase.table("registros")
         .select("*, treinamentos(*)")
@@ -682,9 +697,19 @@ elif pagina == "👤 Visão do Colaborador":
         flat_ind.append({
             "ID": r.get("id"),
             "TreinamentoID": r["treinamento_id"],
-            "Treinamento": r["treinamentos"]["nome_curso"],
-            "Classificacao": r["treinamentos"]["classificacao"],
-            "Horas": float(r["treinamentos"]["carga_horaria"] or 0),
+            "Treinamento": (
+                r["treinamentos"]["nome_curso"] if r.get("treinamentos") else ""
+            ),
+            "Classificacao": (
+                r["treinamentos"]["classificacao"]
+                if r.get("treinamentos")
+                else ""
+            ),
+            "Horas": float(
+                r["treinamentos"]["carga_horaria"]
+                if r.get("treinamentos")
+                else 0
+            ),
             "DataRealizacao": r.get("data_realizacao"),
             "ValidadeMeses": int(r.get("validade_meses") or 12),
             "Evidencia": r.get("arquivo_evidencia"),
@@ -809,7 +834,7 @@ elif pagina == "👤 Visão do Colaborador":
                     key=f"dl_f_{cid}_{tid}",
                 )
 
-        # SALVAMENTO COMPLETO E LIMPEZA DE CACHE
+        # SALVAMENTO COMPLETO
         if st.button(
             f"💾 Salvar Atualização de '{nome_curso}'",
             key=f"btn_save_{cid}_{tid}",
@@ -882,18 +907,24 @@ elif pagina == "👤 Visão do Colaborador":
               st.success(f"🎉 Certificado gerado para '{nome_curso}'!")
               st.rerun()
 
-            elif novo_status == "🔴 Pendente" and is_concluido:
-              # Remove do Storage
-              if reg_info is not None:
-                if reg_info.get("Evidencia"):
-                  deletar_arquivo_supabase(reg_info["Evidencia"])
-                if reg_info.get("Forms"):
-                  deletar_arquivo_supabase(reg_info["Forms"])
+            elif novo_status == "🔴 Pendente":
+              # Se existia no banco, remove arquivos do Storage e deleta o registro
+              check_db = (
+                  supabase.table("registros")
+                  .select("id, arquivo_evidencia, arquivo_forms")
+                  .eq("colaborador_id", cid)
+                  .eq("treinamento_id", tid)
+                  .execute()
+              )
 
-              # Remove do Banco de Dados
-              supabase.table("registros").delete().eq(
-                  "colaborador_id", cid
-              ).eq("treinamento_id", tid).execute()
+              if check_db.data:
+                r_del = check_db.data[0]
+                deletar_arquivo_supabase(r_del.get("arquivo_evidencia"))
+                deletar_arquivo_supabase(r_del.get("arquivo_forms"))
+
+                supabase.table("registros").delete().eq(
+                    "id", r_del["id"]
+                ).execute()
 
               st.cache_data.clear()
               st.warning(f"🗑️ Registro e certificado de '{nome_curso}' removidos!")
