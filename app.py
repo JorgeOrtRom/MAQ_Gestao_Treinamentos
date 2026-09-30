@@ -209,7 +209,7 @@ with st.sidebar:
   ]
 
   if perfil in ["Admin", "Gestor"]:
-    opcoes.extend(["✍️ Lançar Treinamento", "📜 Certificados & Presença"])
+    opcoes.extend(["✍️️ Lançar Treinamento", "📜 Certificados & Presença"])
 
   opcoes.append("📂 Relatórios p/ Auditoria")
 
@@ -810,7 +810,7 @@ elif pagina == "👤 Visão do Colaborador":
                     key=f"dl_f_{cid}_{tid}",
                 )
 
-        # SALVAMENTO SEGURO POR BUSCA PRÉVIA DE ID (SEM ON CONFLICT)
+        # SALVAMENTO TRATADO PARA AUTOINCREMENTO E CHAVE PRIMÁRIA
         if st.button(
             f"💾 Salvar Atualização de '{nome_curso}'",
             key=f"btn_save_{cid}_{tid}",
@@ -870,13 +870,13 @@ elif pagina == "👤 Visão do Colaborador":
               )
 
               if check_db.data:
-                # Atualiza filtrando explicitamente pelo ID primário
+                # Atualiza a linha existente sem reenviar 'id' no payload
                 reg_id = check_db.data[0]["id"]
                 supabase.table("registros").update(payload).eq(
                     "id", reg_id
                 ).execute()
               else:
-                # Insere registro novo
+                # Insere novo registro (deixa a chave primária autoincrementar)
                 supabase.table("registros").insert(payload).execute()
 
               st.success(f"🎉 Certificado gerado para '{nome_curso}'!")
@@ -890,7 +890,7 @@ elif pagina == "👤 Visão do Colaborador":
                 if reg_info.get("Forms"):
                   deletar_arquivo_supabase(reg_info["Forms"])
 
-              # Elimina o registro do banco de dados pelo ID
+              # Elimina o registro do banco pelo ID
               if reg_info is not None and reg_info.get("ID"):
                 supabase.table("registros").delete().eq(
                     "id", reg_info["ID"]
