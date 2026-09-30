@@ -88,6 +88,8 @@ if "perfil_usuario" not in st.session_state:
   st.session_state["perfil_usuario"] = None
 if "nome_usuario" not in st.session_state:
   st.session_state["nome_usuario"] = None
+if "pagina" not in st.session_state:
+  st.session_state["pagina"] = "📊 Dashboard Executivo"
 
 # TELA DE LOGIN
 if st.session_state["usuario_logado"] is None:
@@ -147,7 +149,7 @@ if st.session_state["usuario_logado"] is None:
   st.stop()
 
 # -------------------------------------------------------------------
-# MENU LATERAL - NAVEGAÇÃO PERSISTENTE VIA RADIO
+# MENU LATERAL COM NAVEGAÇÃO COMPATÍVEL COM NUVEM
 # -------------------------------------------------------------------
 with st.sidebar:
   logo_caminho = carregar_logo_empresa()
@@ -200,7 +202,12 @@ with st.sidebar:
   elif perfil == "Auditor":
     opcoes.extend(["📜 Logs de Auditoria", "📚 Catálogo de Treinamentos"])
 
-  pagina = st.radio("📌 Selecione a Página:", opcoes, key="navegacao_principal")
+  for opt in opcoes:
+    if st.button(opt, use_container_width=True, key=f"nav_btn_{opt}"):
+      st.session_state["pagina"] = opt
+      st.rerun()
+
+pagina = st.session_state["pagina"]
 
 
 # -------------------------------------------------------------------
@@ -590,7 +597,7 @@ if pagina == "📊 Dashboard Executivo":
       )
 
       k1.metric("👥 Colaboradores", df_colabs_total)
-      k2.metric("⏱️️ Horas Capacitadas", f"{total_horas:.1f}h")
+      k2.metric("⏱ Horas Capacitadas", f"{total_horas:.1f}h")
       k3.metric("📈 Taxa Conformidade", f"{tx_conformidade:.1f}%")
       k4.metric("🟢 Em Dia", conformes)
       k5.metric("🔴 Vencidos", nao_conformes, delta_color="inverse")
@@ -809,7 +816,7 @@ elif pagina == "👤 Visão do Colaborador":
                     key=f"dl_f_{cid}_{tid}",
                 )
 
-        # AÇÃO DO BOTÃO SALVAR
+        # BOTÃO SALVAR REVISADO E COMPATÍVEL COM NUVEM
         if st.button(
             f"💾 Salvar Atualização de '{nome_curso}'",
             key=f"btn_save_{cid}_{tid}",
@@ -844,7 +851,7 @@ elif pagina == "👤 Visão do Colaborador":
                   or "Aplicador do Treinamento",
               )
 
-              # 2. Upload do PDF para o Storage
+              # 2. Upload do PDF para o Storage do Supabase
               salvar_arquivo_supabase(
                   nome_cert_auto, pdf_bytes_cert.getvalue()
               )
@@ -862,7 +869,7 @@ elif pagina == "👤 Visão do Colaborador":
                   "custo_real": 0.0,
               }
 
-              # 3. Garante atualização do registro ou insere um novo
+              # 3. Busca o registro e faz update filtrando pelo ID único da linha
               check_db = (
                   supabase.table("registros")
                   .select("id")
