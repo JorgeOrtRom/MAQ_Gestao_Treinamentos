@@ -810,7 +810,7 @@ elif pagina == "👤 Visão do Colaborador":
                     key=f"dl_f_{cid}_{tid}",
                 )
 
-        # SALVAMENTO SEGURO VIA VERIFICAÇÃO SELECT + INSERT/UPDATE
+        # SALVAMENTO SEGURO POR BUSCA PRÉVIA DE ID (SEM ON CONFLICT)
         if st.button(
             f"💾 Salvar Atualização de '{nome_curso}'",
             key=f"btn_save_{cid}_{tid}",
@@ -842,7 +842,7 @@ elif pagina == "👤 Visão do Colaborador":
                   aplicador_cargo=limpar_valor(cargo_aplicador),
               )
 
-              # Salva o certificado gerado no Storage
+              # Salva no Storage
               salvar_arquivo_supabase(
                   nome_cert_auto, pdf_bytes_cert.getvalue()
               )
@@ -860,7 +860,7 @@ elif pagina == "👤 Visão do Colaborador":
                   "custo_real": 0.0,
               }
 
-              # Consulta se o registro já existe no banco
+              # Consulta se o registro já existe para pegar o ID numérico
               check_db = (
                   supabase.table("registros")
                   .select("id")
@@ -870,12 +870,13 @@ elif pagina == "👤 Visão do Colaborador":
               )
 
               if check_db.data:
-                # Atualiza a linha existente
+                # Atualiza filtrando explicitamente pelo ID primário
+                reg_id = check_db.data[0]["id"]
                 supabase.table("registros").update(payload).eq(
-                    "colaborador_id", cid
-                ).eq("treinamento_id", tid).execute()
+                    "id", reg_id
+                ).execute()
               else:
-                # Insere uma nova linha
+                # Insere registro novo
                 supabase.table("registros").insert(payload).execute()
 
               st.success(f"🎉 Certificado gerado para '{nome_curso}'!")
@@ -889,10 +890,15 @@ elif pagina == "👤 Visão do Colaborador":
                 if reg_info.get("Forms"):
                   deletar_arquivo_supabase(reg_info["Forms"])
 
-              # Elimina o registro do banco de dados
-              supabase.table("registros").delete().eq(
-                  "colaborador_id", cid
-              ).eq("treinamento_id", tid).execute()
+              # Elimina o registro do banco de dados pelo ID
+              if reg_info is not None and reg_info.get("ID"):
+                supabase.table("registros").delete().eq(
+                    "id", reg_info["ID"]
+                ).execute()
+              else:
+                supabase.table("registros").delete().eq(
+                    "colaborador_id", cid
+                ).eq("treinamento_id", tid).execute()
 
               st.warning(f"🗑️ Registro e certificado de '{nome_curso}' removidos!")
               st.rerun()
