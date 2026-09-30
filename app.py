@@ -1,5 +1,5 @@
-from datetime import datetime
 import datetime as dt_module
+from datetime import datetime
 import io
 import os
 import numpy as np
@@ -9,7 +9,14 @@ from reportlab.graphics.shapes import Circle, Drawing, String
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import landscape, letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import (
+    Image,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 import streamlit as st
 from supabase import Client, create_client
 
@@ -30,7 +37,7 @@ def limpar_valor(val):
 
 
 # -------------------------------------------------------------------
-# CONEXÃO COM O SUPABASE (USANDO SECRETS OU FALLBACK)
+# CONEXÃO COM O SUPABASE
 # -------------------------------------------------------------------
 @st.cache_resource
 def init_supabase() -> Client:
@@ -227,7 +234,7 @@ pagina = st.session_state["pagina"]
 
 
 # -------------------------------------------------------------------
-# GERADORES DE PDF E STORAGE
+# GERADORES DE PDF E SUPABASE STORAGE
 # -------------------------------------------------------------------
 def criar_selo_oficial():
   d = Drawing(85, 85)
@@ -462,6 +469,20 @@ def salvar_arquivo_supabase(
     return path_name
 
 
+def deletar_arquivo_supabase(path_name):
+  """Deleta o arquivo do Storage do Supabase ao reverter para Pendente."""
+  try:
+    if path_name and str(path_name).strip().lower() not in [
+        "none",
+        "nan",
+        "sem anexo",
+        "",
+    ]:
+      supabase.storage.from_("evidencias").remove([path_name])
+  except Exception:
+    pass
+
+
 def baixar_arquivo_supabase(path_name):
   try:
     res = supabase.storage.from_("evidencias").download(path_name)
@@ -674,15 +695,6 @@ elif pagina == "👤 Visão do Colaborador":
           })
     df_realizados = pd.DataFrame(flat_ind)
 
-    qtd_realizados = len(df_realizados)
-    qtd_pendentes = max(0, total_mapeados - qtd_realizados)
-    pct_concluido = (
-        (qtd_realizados / total_mapeados * 100) if total_mapeados > 0 else 0.0
-    )
-    horas_acumuladas = (
-        df_realizados["Horas"].sum() if not df_realizados.empty else 0.0
-    )
-
     st.markdown(
         f"""
         <div class="colab-card">
@@ -798,12 +810,14 @@ elif pagina == "👤 Visão do Colaborador":
                     key=f"dl_f_{cid}_{tid}",
                 )
 
+        # BOTÃO DE SALVAMENTO COM GERAÇÃO/EXCLUSÃO AUTOMÁTICA DE CERTIFICADOS
         if st.button(
             f"💾 Salvar Atualização de '{nome_curso}'",
             key=f"btn_save_{cid}_{tid}",
         ):
           dt_str = nova_data.strftime("%Y-%m-%d")
 
+          # 1. CASO: ALTEROU PARA "🟢 CONCLUÍDO" -> GERAR CERTIFICADO AUTOMÁTICO
           if novo_status == "🟢 Concluído":
             nome_forms_salvo = (
                 reg_info["Forms"] if is_concluido else "Sem anexo"
@@ -814,6 +828,7 @@ elif pagina == "👤 Visão do Colaborador":
                   nome_forms_salvo, up_f.getbuffer()
               )
 
+            # Geração Automática do Certificado em PDF
             nome_cert_auto = f"Certificado_AUTO_{cid}_{tid}_{dt_str}.pdf"
             pdf_bytes_cert = gerar_pdf_certificado(
                 colab_nome=colab_info["nome"],
@@ -824,6 +839,8 @@ elif pagina == "👤 Visão do Colaborador":
                 aplicador_nome=limpar_valor(nome_aplicador),
                 aplicador_cargo=limpar_valor(cargo_aplicador),
             )
+
+            # Upload do PDF para o Storage do Supabase
             salvar_arquivo_supabase(
                 nome_cert_auto, pdf_bytes_cert.getvalue()
             )
@@ -841,11 +858,10 @@ elif pagina == "👤 Visão do Colaborador":
                 "custo_real": 0.0,
             }
 
+            # Grava o registro no Supabase
             try:
-              # Tenta o Upsert limpo
               supabase.table("registros").upsert(payload).execute()
             except Exception:
-              # Fallback seguro para insert/update tradicional
               if not is_concluido:
                 supabase.table("registros").insert(payload).execute()
               else:
@@ -854,20 +870,32 @@ elif pagina == "👤 Visão do Colaborador":
                 ).eq("treinamento_id", tid).execute()
 
             st.success(
-                f"🎉 Treinamento '{nome_curso}' salvo e sincronizado no"
-                " Supabase!"
-            )
-            st.rerun()
-
-          elif novo_status == "🔴 Pendente" and is_concluido:
-            supabase.table("registros").delete().eq(
-                "colaborador_id", cid
-            ).eq("treinamento_id", tid).execute()
-            st.warning(
-                f"🗑️ Registro do treinamento '{nome_curso}' removido com"
+                f"🎉 Certificado gerado e treinamento '{nome_curso}' salvo com"
                 " sucesso!"
             )
             st.rerun()
+
+          # 2. CASO: ALTEROU PARA "🔴 PENDENTE" -> APAGAR CERTIFICADO DO STORAGE E REMOVER REGISTRO
+          elif novo_status == "🔴 Pendente" and is_concluido:
+            # Apaga o arquivo do certificado do Storage
+            if reg_info is not None and reg_info["Evidencia"]:
+              deletar_arquivo_supabase(reg_info["Evidencia"])
+
+            # Apaga o formulário/anexo do Storage (se houver)
+            if reg_info is not None and reg_info["Forms"]:
+              deletar_arquivo_supabase(reg_info["Forms"])
+
+            # Deleta a linha do banco de dados no Supabase
+            supabase.table("registros").delete().eq(
+                "colaborador_id", cid
+            ).eq("treinamento_id", tid).execute()
+
+            st.warning(
+                f"🗑️ Certificado excluído e registro do treinamento"
+                f" '{nome_curso}' removido!"
+            )
+            st.rerun()
+
         st.divider()
 
 elif pagina == "📚 Catálogo de Treinamentos":
