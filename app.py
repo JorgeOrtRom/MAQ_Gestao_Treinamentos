@@ -824,7 +824,7 @@ if pagina == "📊 Dashboard Executivo":
       )
 
       k1.metric("👥 Colaboradores", df_colabs_total)
-      k2.metric("⏱️ Horas Capacitadas", f"{total_horas:.1f}h")
+      k2.metric("⏱️️ Horas Capacitadas", f"{total_horas:.1f}h")
       k3.metric("📈 Taxa Conformidade", f"{tx_conformidade:.1f}%")
       k4.metric("🟢 Em Dia", conformes)
       k5.metric("🔴 Vencidos", nao_conformes, delta_color="inverse")
@@ -862,7 +862,7 @@ if pagina == "📊 Dashboard Executivo":
         st.plotly_chart(fig_bar, use_container_width=True)
 
 # -------------------------------------------------------------------
-# 2. VISÃO DO COLABORADOR
+# 2. VISÃO DO COLABORADOR (USANDO ST.FORM ISOLADO POR LINHA)
 # -------------------------------------------------------------------
 elif pagina == "👤 Visão do Colaborador":
   st.markdown(
@@ -932,7 +932,6 @@ elif pagina == "👤 Visão do Colaborador":
         })
     df_realizados = pd.DataFrame(flat_ind)
 
-    # Considera apenas concluidos para contagem
     df_concluidos = (
         df_realizados[df_realizados["StatusPlanilha"] == "Concluído"]
         if not df_realizados.empty
@@ -992,7 +991,8 @@ elif pagina == "👤 Visão do Colaborador":
 
     st.divider()
     st.subheader(
-        "📋 Gestão Individual por Treinamento (Atualização de Status e Evidências)"
+        "📋 Gestão Individual por Treinamento (Status, Dados do Aplicador e"
+        " Uploads)"
     )
 
     for _, r_t in df_lnt_cargo.iterrows():
@@ -1010,7 +1010,8 @@ elif pagina == "👤 Visão do Colaborador":
       )
       reg_info = reg_match.iloc[0] if not reg_match.empty else None
 
-      with st.container():
+      # CADA LINHA DE TREINAMENTO VIRA UM FORMULÁRIO ISOLADO
+      with st.form(key=f"form_treino_{cid}_{tid}"):
         st.markdown(
             f"#### 📚 {nome_curso} ({ch_val}h - {r_t['classificacao']})"
         )
@@ -1018,17 +1019,14 @@ elif pagina == "👤 Visão do Colaborador":
             [2, 2, 2, 2, 2.5, 2]
         )
 
-        key_status = f"status_{cid}_{tid}"
-
         with col_c1:
           status_opcoes = ["🔴 Pendente", "🟢 Concluído"]
           idx_default = 1 if is_concluido else 0
-
-          st.selectbox(
+          novo_status = st.selectbox(
               "Status",
               options=status_opcoes,
               index=idx_default,
-              key=key_status,
+              key=f"st_sel_{cid}_{tid}",
           )
 
         with col_c2:
@@ -1040,6 +1038,7 @@ elif pagina == "👤 Visão do Colaborador":
           nova_data = st.date_input(
               "Data Aplicação", value=dt_def, key=f"data_{cid}_{tid}"
           )
+
         with col_c3:
           inst_def = (
               reg_info["Instrutor"]
@@ -1051,6 +1050,7 @@ elif pagina == "👤 Visão do Colaborador":
               value=limpar_valor(inst_def) or "",
               key=f"inst_{cid}_{tid}",
           )
+
         with col_c4:
           cargo_def = (
               reg_info["AplicadorCargo"]
@@ -1065,12 +1065,14 @@ elif pagina == "👤 Visão do Colaborador":
               value=limpar_valor(cargo_def) or "",
               key=f"acargo_{cid}_{tid}",
           )
+
         with col_c5:
           up_f = st.file_uploader(
               "📎 Anexar Forms/Lista",
               type=["pdf", "png", "jpg"],
               key=f"up_{cid}_{tid}",
           )
+
         with col_c6:
           st.write("📄 **Ações / Download:**")
           if is_concluido and reg_info is not None:
@@ -1101,16 +1103,16 @@ elif pagina == "👤 Visão do Colaborador":
                     key=f"dl_f_{cid}_{tid}",
                 )
 
-        # BOTÃO SALVAR REVISADO E COMPATÍVEL COM SUPABASE
-        if st.button(
+        btn_submit = st.form_submit_button(
             f"💾 Salvar Atualização de '{nome_curso}'",
-            key=f"btn_save_{cid}_{tid}",
-        ):
+            use_container_width=True,
+        )
+
+        if btn_submit:
           dt_str = nova_data.strftime("%Y-%m-%d")
-          status_selecionado = st.session_state.get(key_status)
 
           try:
-            if status_selecionado == "🟢 Concluído":
+            if novo_status == "🟢 Concluído":
               nome_forms_salvo = (
                   reg_info["Forms"] if is_concluido and reg_info is not None else "Sem anexo"
               )
@@ -1136,7 +1138,7 @@ elif pagina == "👤 Visão do Colaborador":
                   or "Aplicador do Treinamento",
               )
 
-              # 2. Upload do PDF para o Storage
+              # 2. Upload para o Storage
               salvar_arquivo_supabase(
                   nome_cert_auto, pdf_bytes_cert.getvalue()
               )
@@ -1154,7 +1156,7 @@ elif pagina == "👤 Visão do Colaborador":
                   "custo_real": 0.0,
               }
 
-              # 3. Consulta no banco em tempo real antes de gravar
+              # 3. Consulta no banco antes de gravar
               check_db = (
                   supabase.table("registros")
                   .select("id")
@@ -1171,11 +1173,10 @@ elif pagina == "👤 Visão do Colaborador":
               else:
                 supabase.table("registros").insert(payload).execute()
 
-              st.cache_data.clear()
               st.success(f"🎉 Certificado gerado para '{nome_curso}'!")
               st.rerun()
 
-            elif status_selecionado == "🔴 Pendente":
+            elif novo_status == "🔴 Pendente":
               check_db = (
                   supabase.table("registros")
                   .select("id, arquivo_evidencia, arquivo_forms")
@@ -1193,7 +1194,6 @@ elif pagina == "👤 Visão do Colaborador":
                     "id", r_del["id"]
                 ).execute()
 
-              st.cache_data.clear()
               st.warning(
                   f"🗑️ Registro e certificado de '{nome_curso}' removidos!"
               )
@@ -1352,7 +1352,6 @@ elif pagina == "✍️ Lançar Treinamento":
             "LANÇAMENTO DE TREINAMENTO",
             f"Treino ID {tid} para Colab ID {cid}",
         )
-        st.cache_data.clear()
         st.success(
             "🎉 Treinamento gravado e Certificado"
             f" `{nome_cert_auto}` gerado com sucesso!"
@@ -1441,7 +1440,6 @@ elif pagina == "📚 Catálogo de Treinamentos":
               "INCLUSÃO TREINAMENTO",
               f"Incluído curso: {n_curso}",
           )
-          st.cache_data.clear()
           st.success(f"Treinamento '{n_curso}' adicionado com sucesso!")
           st.rerun()
 
@@ -1523,7 +1521,6 @@ elif pagina == "📚 Catálogo de Treinamentos":
               "EDIÇÃO TREINAMENTO",
               f"Atualizado curso ID {row_e['id']}: {e_curso}",
           )
-          st.cache_data.clear()
           st.success("Cadastro do treinamento atualizado no catálogo!")
           st.rerun()
 
@@ -1823,7 +1820,6 @@ elif pagina == "👥 Gestão de Colaboradores":
                 "INCLUSÃO COLABORADOR",
                 f"Incluído: {n_nome} ({setor_final})",
             )
-            st.cache_data.clear()
             st.success(
                 f"Colaborador '{n_nome}' incluído no setor '{setor_final}'"
                 " com sucesso!"
@@ -1897,7 +1893,6 @@ elif pagina == "👥 Gestão de Colaboradores":
               "EDIÇÃO COLABORADOR",
               f"Editado ID {row_edit['id']}: '{e_nome}'",
           )
-          st.cache_data.clear()
           st.success("Cadastro atualizado com sucesso!")
           st.rerun()
 
@@ -1930,7 +1925,6 @@ elif pagina == "👥 Gestão de Colaboradores":
             "EXCLUSÃO COLABORADOR",
             f"Excluído colaborador ID {row_del['id']}: {row_del['nome']}",
         )
-        st.cache_data.clear()
         st.success("Colaborador removido com sucesso!")
         st.rerun()
 
@@ -1996,7 +1990,6 @@ elif pagina == "🎯 Matriz por Cargo (LNT)":
             "ATUALIZAÇÃO LNT",
             f"Atualizada matriz para o cargo {cargo_sel}",
         )
-        st.cache_data.clear()
         st.success(f"Matriz LNT para `{cargo_sel}` salva com sucesso!")
 
 # -------------------------------------------------------------------
