@@ -1,35 +1,35 @@
 from datetime import datetime
 import pandas as pd
-import sqlite3
 import streamlit as st
 from supabase import create_client
 
 # -----------------------------------------------------------------------------
-# 1. CONFIGURAÇÃO DA PÁGINA E CONEXÃO SUPABASE
+# 1. CONFIGURAÇÃO DA PÁGINA E ESTILOS CUSTOMIZADOS
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="MAQ - Gestão de Treinamentos",
+    page_title="MAQ_Gestao_Treinamentos",
     page_icon="📚",
     layout="wide",
 )
 
+# Secrets do Supabase
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-def limpar_valor(val):
-  """Auxiliar para converter NaNs do pandas em None (null no Supabase)."""
-  if pd.isna(val) or str(val).strip().lower() in ["nan", "none", "null", ""]:
+def limpar_campo(valor):
+  """Converte textos 'nan', vazios ou Nulos para None (compatível com JSON do Supabase)."""
+  if pd.isna(valor) or str(valor).strip().lower() in ["nan", "none", "null", ""]:
     return None
-  return str(val).strip()
+  return str(valor).strip()
 
 
 # -----------------------------------------------------------------------------
-# 2. FUNÇÕES DE BUSCA DE DADOS (SUPABASE)
+# 2. CARREGAMENTO DE DADOS COM CACHE
 # -----------------------------------------------------------------------------
 @st.cache_data(ttl=5)
-def carregar_colaboradores():
+def buscar_colaboradores():
   res = (
       supabase.table("colaboradores")
       .select("*")
@@ -37,13 +37,11 @@ def carregar_colaboradores():
       .execute()
   )
   df = pd.DataFrame(res.data)
-  if not df.empty:
-    df = df.where(pd.notnull(df), None)
-  return df
+  return df.where(pd.notnull(df), None) if not df.empty else df
 
 
 @st.cache_data(ttl=5)
-def carregar_treinamentos():
+def buscar_treinamentos():
   res = (
       supabase.table("treinamentos")
       .select("*")
@@ -51,205 +49,208 @@ def carregar_treinamentos():
       .execute()
   )
   df = pd.DataFrame(res.data)
-  if not df.empty:
-    df = df.where(pd.notnull(df), None)
-  return df
+  return df.where(pd.notnull(df), None) if not df.empty else df
 
 
 @st.cache_data(ttl=5)
-def carregar_registros():
+def buscar_registros():
   res = supabase.table("registros").select("*").execute()
   df = pd.DataFrame(res.data)
-  if not df.empty:
-    df = df.where(pd.notnull(df), None)
-  return df
+  return df.where(pd.notnull(df), None) if not df.empty else df
 
+
+df_colab = buscar_colaboradores()
+df_treino = buscar_treinamentos()
+df_reg = buscar_registros()
 
 # -----------------------------------------------------------------------------
-# 3. INTERFACE E NAVEGAÇÃO
+# 3. CABEÇALHO E NAVEGAÇÃO
 # -----------------------------------------------------------------------------
-st.title("📚 MAQ - Sistema de Gestão de Treinamentos")
-
+st.sidebar.title("📌 Menu de Navegação")
 menu = st.sidebar.radio(
-    "Navegação",
+    "Selecione o módulo:",
     [
-        "👥 Gestão de Colaboradores",
+        "👥 Gestão do Colaborador",
         "📊 Dashboard Executivo",
         "📚 Catálogo de Treinamentos",
     ],
 )
 
-df_colab = carregar_colaboradores()
-df_treino = carregar_treinamentos()
-df_reg = carregar_registros()
-
 # -----------------------------------------------------------------------------
-# MODULO 1: GESTÃO DE COLABORADORES
+# MÓDULO: GESTÃO DO COLABORADOR (DESIGN ORIGINAL)
 # -----------------------------------------------------------------------------
-if menu == "👥 Gestão de Colaboradores":
+if menu == "👥 Gestão do Colaborador":
   if df_colab.empty:
-    st.warning(
-        "Nenhum colaborador encontrado. Execute a migração para popular os"
-        " dados."
-    )
+    st.info("Nenhum colaborador encontrado na base de dados.")
   else:
-    # Seleção de Colaborador
-    opcoes_colab = {
-        row["id"]: f"{row['nome']} - {row['cargo']}"
+    colab_dict = {
+        row["id"]: f"{row['nome']}"
         for _, row in df_colab.iterrows()
+        if row.get("nome")
     }
+
     colab_id_sel = st.selectbox(
-        "Selecione o Colaborador:",
-        options=list(opcoes_colab.keys()),
-        format_func=lambda x: opcoes_colab[x],
+        "Pesquisar Colaborador:",
+        options=list(colab_dict.keys()),
+        format_func=lambda x: colab_dict[x],
     )
 
-    colab_dados = df_colab[df_colab["id"] == colab_id_sel].iloc[0]
+    c_info = df_colab[df_colab["id"] == colab_id_sel].iloc[0]
 
-    # Exibição do Perfil
-    st.markdown(f"## 👤 {colab_dados['nome']}")
-    c1, c2, c3 = st.columns(3)
-    c1.markdown(f"**💼 Cargo:** {colab_dados.get('cargo') or 'Não informado'}")
-    c2.markdown(f"**🏢 Setor:** {colab_dados.get('departamento') or 'MAQ'}")
-    c3.markdown(
-        f"**👤 Gestor:** {colab_dados.get('gestor') or 'Não informado'}"
+    # Card do Perfil do Colaborador (Design das Imagens)
+    st.markdown(f"## 👤 {c_info['nome'].upper()}")
+
+    meta_cols = st.columns([2.5, 2.5, 2.5, 3.5])
+    meta_cols[0].markdown(
+        f"💼 **Cargo:** {c_info.get('cargo') or 'Não informado'}"
+    )
+    meta_cols[1].markdown(
+        f"👔 **Gestor:** {c_info.get('gestor') or 'Não informado'}"
+    )
+    meta_cols[2].markdown(
+        f"🏢 **Departamento:** {c_info.get('departamento') or 'Não informado'}"
+    )
+    meta_cols[3].markdown(
+        f"✉️ **E-mail:** {c_info.get('email') or 'Não informado'}"
     )
 
     st.markdown("---")
     st.subheader("📋 Gestão Individual por Treinamento (Supabase Cloud Sync)")
 
     if df_treino.empty:
-      st.info("Nenhum treinamento cadastrado no catálogo.")
+      st.warning("Nenhum treinamento cadastrado no sistema.")
     else:
       for _, t_row in df_treino.iterrows():
         t_id = t_row["id"]
         t_nome = t_row["nome_curso"]
-        t_ch = t_row.get("carga_horaria", 0)
 
-        # Busca registro existente do colaborador para o treinamento específico
-        reg_atual = df_reg[
+        # Busca registro existente do colaborador
+        reg_match = df_reg[
             (df_reg["colaborador_id"] == colab_id_sel)
             & (df_reg["treinamento_id"] == t_id)
         ]
 
-        status_val = "Pendente"
-        data_val = None
-        inst_nome_val = ""
-        inst_cargo_val = ""
+        status_atual = "Pendente"
+        data_atual = None
+        aplicador_nome = ""
+        aplicador_cargo = ""
 
-        if not reg_atual.empty:
-          r_data = reg_atual.iloc[0]
-          status_val = r_data.get("status_planilha") or "Pendente"
-          inst_nome_val = limpar_valor(r_data.get("instrutor_nome")) or ""
-          inst_cargo_val = limpar_valor(r_data.get("aplicador_cargo")) or ""
+        if not reg_match.empty:
+          r = reg_match.iloc[0]
+          status_atual = r.get("status_planilha") or "Pendente"
+          aplicador_nome = limpar_campo(r.get("instrutor_nome")) or ""
+          aplicador_cargo = limpar_campo(r.get("aplicador_cargo")) or ""
 
-          data_str = r_data.get("data_realizacao")
-          if data_str:
+          d_str = r.get("data_realizacao")
+          if d_str and str(d_str).strip().lower() != "nan":
             try:
-              data_val = datetime.strptime(
-                  str(data_str).split("T")[0], "%Y-%m-%d"
+              data_atual = datetime.strptime(
+                  str(d_str).split("T")[0], "%Y-%m-%d"
               )
             except Exception:
-              data_val = None
+              data_atual = None
 
-        with st.expander(
-            f"📌 {t_nome} ({t_ch}h)", expanded=(status_val == "Concluído")
+        st.markdown(f"### 🎏 {t_nome}")
+
+        # Grid Horizontal idêntico à imagem enviada
+        f1, f2, f3, f4, f5, f6 = st.columns([1.5, 1.5, 2, 2, 2, 1.5])
+
+        with f1:
+          status_opcoes = ["Pendente", "Em Andamento", "Concluído"]
+          idx_st = (
+              status_opcoes.index(status_atual)
+              if status_atual in status_opcoes
+              else 0
+          )
+          novo_status = st.selectbox(
+              "Status",
+              status_opcoes,
+              index=idx_st,
+              key=f"st_{colab_id_sel}_{t_id}",
+          )
+
+        with f2:
+          nova_data = st.date_input(
+              "Data Aplicação",
+              value=data_atual if data_atual else datetime.now(),
+              key=f"dt_{colab_id_sel}_{t_id}",
+          )
+
+        with f3:
+          novo_aplicador = st.text_input(
+              "Nome Aplicador",
+              value=aplicador_nome,
+              key=f"ap_n_{colab_id_sel}_{t_id}",
+          )
+
+        with f4:
+          novo_cargo_ap = st.text_input(
+              "Cargo Aplicador",
+              value=aplicador_cargo,
+              key=f"ap_c_{colab_id_sel}_{t_id}",
+          )
+
+        with f5:
+          st.file_uploader(
+              "📎 Anexar Forms/Lista",
+              type=["pdf", "png", "jpg"],
+              key=f"file_{colab_id_sel}_{t_id}",
+          )
+
+        with f6:
+          st.write("📄 **Ações / Download:**")
+
+        # Botão de Salvamento (Corrigido para evitar o erro postgrest.exceptions.APIError)
+        if st.button(
+            f"💾 Salvar Atualização de '{t_nome}'",
+            key=f"btn_save_{colab_id_sel}_{t_id}",
         ):
-          col_a, col_b, col_c, col_d = st.columns([2, 2, 2, 2])
-
-          with col_a:
-            novo_status = st.selectbox(
-                "Status",
-                ["Pendente", "Em Andamento", "Concluído"],
-                index=[
-                    "Pendente",
-                    "Em Andamento",
-                    "Concluído",
-                ].index(
-                    status_val if status_val in ["Pendente", "Em Andamento", "Concluído"] else "Pendente"
+          try:
+            payload = {
+                "colaborador_id": int(colab_id_sel),
+                "treinamento_id": int(t_id),
+                "status_planilha": novo_status,
+                "data_realizacao": (
+                    nova_data.strftime("%Y-%m-%d") if nova_data else None
                 ),
-                key=f"status_{colab_id_sel}_{t_id}",
-            )
+                "instrutor_nome": limpar_campo(novo_aplicador),
+                "aplicador_cargo": limpar_campo(novo_cargo_ap),
+            }
 
-          with col_b:
-            nova_data = st.date_input(
-                "Data Realização",
-                value=data_val if data_val else datetime.now(),
-                key=f"data_{colab_id_sel}_{t_id}",
-            )
+            # Atualiza ou Insere sem violar constraints nem gerar NaN no JSON
+            supabase.table("registros").upsert(payload).execute()
 
-          with col_c:
-            novo_inst_nome = st.text_input(
-                "Nome Aplicador",
-                value=inst_nome_val,
-                key=f"inst_nome_{colab_id_sel}_{t_id}",
-            )
+            st.cache_data.clear()
+            st.success(f"✅ Atualização salva com sucesso!")
+            st.rerun()
 
-          with col_d:
-            novo_inst_cargo = st.text_input(
-                "Cargo Aplicador",
-                value=inst_cargo_val,
-                key=f"inst_cargo_{colab_id_sel}_{t_id}",
-            )
+          except Exception as ex:
+            st.error(f"Erro ao atualizar registro no Supabase: {ex}")
 
-          # BOTÃO DE SALVAMENTO COM UPSERT TRATADO
-          if st.button(
-              f"💾 Salvar Atualização de '{t_nome}'",
-              key=f"btn_{colab_id_sel}_{t_id}",
-          ):
-            try:
-              payload = {
-                  "colaborador_id": int(colab_id_sel),
-                  "treinamento_id": int(t_id),
-                  "status_planilha": novo_status,
-                  "data_realizacao": (
-                      nova_data.strftime("%Y-%m-%d") if nova_data else None
-                  ),
-                  "instrutor_nome": limpar_valor(novo_inst_nome),
-                  "aplicador_cargo": limpar_valor(novo_inst_cargo),
-              }
-
-              # Executa Upsert de forma limpa sem disparar APIError
-              supabase.table("registros").upsert(
-                  payload, on_conflict="colaborador_id,treinamento_id"
-              ).execute()
-
-              st.cache_data.clear()
-              st.success(f"✅ Alteração em '{t_nome}' salva com sucesso!")
-              st.rerun()
-            except Exception as e:
-              # Fallback de gravação caso a constraint de conflito não esteja mapeada
-              try:
-                supabase.table("registros").upsert(payload).execute()
-                st.cache_data.clear()
-                st.success(f"✅ Registrado com sucesso!")
-                st.rerun()
-              except Exception as ex:
-                st.error(f"Erro ao salvar registro: {ex}")
+        st.markdown("---")
 
 # -----------------------------------------------------------------------------
-# MODULO 2: DASHBOARD EXECUTIVO
+# MÓDULO: DASHBOARD EXECUTIVO
 # -----------------------------------------------------------------------------
 elif menu == "📊 Dashboard Executivo":
-  st.subheader("📊 Indicadores Gerais do Sistema")
+  st.subheader("📊 Visão Geral da Matriz de Treinamentos")
+  m1, m2, m3 = st.columns(3)
+  m1.metric("Colaboradores Ativos", len(df_colab))
+  m2.metric("Treinamentos no Catálogo", len(df_treino))
 
-  c1, c2, c3 = st.columns(3)
-  c1.metric("Total de Colaboradores", len(df_colab))
-  c2.metric("Total de Treinamentos", len(df_treino))
-
-  concluidos = (
+  qtd_concluidos = (
       len(df_reg[df_reg["status_planilha"] == "Concluído"])
       if not df_reg.empty
       else 0
   )
-  c3.metric("Treinamentos Concluídos", concluidos)
+  m3.metric("Treinamentos Concluídos", qtd_concluidos)
 
   st.markdown("---")
   st.dataframe(df_colab, use_container_width=True)
 
 # -----------------------------------------------------------------------------
-# MODULO 3: CATÁLOGO DE TREINAMENTOS
+# MÓDULO: CATÁLOGO DE TREINAMENTOS
 # -----------------------------------------------------------------------------
 elif menu == "📚 Catálogo de Treinamentos":
-  st.subheader("📚 Cursos e Treinamentos Cadastrados")
+  st.subheader("📚 Cursos e Exigências Cadastradas")
   st.dataframe(df_treino, use_container_width=True)
