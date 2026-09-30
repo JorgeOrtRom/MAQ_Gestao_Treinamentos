@@ -68,29 +68,6 @@ def carregar_logo_empresa():
   return None
 
 
-def get_lista_departamentos():
-  try:
-    res = (
-        supabase.table("colaboradores")
-        .select("departamento")
-        .neq("departamento", "")
-        .execute()
-    )
-    df_deptos = pd.DataFrame(res.data)
-    if not df_deptos.empty:
-      return sorted(df_deptos["departamento"].unique().tolist())
-  except Exception:
-    pass
-  return [
-      "EXECUÇÃO",
-      "MANUTENÇÃO",
-      "OPERAÇÃO",
-      "ALMOXARIFE",
-      "ADMINISTRATIVO",
-      "SEGURANÇA (SSO)",
-  ]
-
-
 def registrar_log(usuario, acao, detalhes):
   try:
     supabase.table("logs_auditoria").insert({
@@ -103,7 +80,7 @@ def registrar_log(usuario, acao, detalhes):
 
 
 # -------------------------------------------------------------------
-# AUTENTICAÇÃO E PERFIS
+# AUTENTICAÇÃO E PERFIS DE ACESSO
 # -------------------------------------------------------------------
 if "usuario_logado" not in st.session_state:
   st.session_state["usuario_logado"] = None
@@ -111,8 +88,6 @@ if "perfil_usuario" not in st.session_state:
   st.session_state["perfil_usuario"] = None
 if "nome_usuario" not in st.session_state:
   st.session_state["nome_usuario"] = None
-if "pagina" not in st.session_state:
-  st.session_state["pagina"] = "📊 Dashboard Executivo"
 
 # TELA DE LOGIN
 if st.session_state["usuario_logado"] is None:
@@ -172,7 +147,7 @@ if st.session_state["usuario_logado"] is None:
   st.stop()
 
 # -------------------------------------------------------------------
-# MENU LATERAL RESTAURADO COM TODAS AS OPÇÕES
+# MENU LATERAL - NAVEGAÇÃO PERSISTENTE VIA RADIO
 # -------------------------------------------------------------------
 with st.sidebar:
   logo_caminho = carregar_logo_empresa()
@@ -225,12 +200,7 @@ with st.sidebar:
   elif perfil == "Auditor":
     opcoes.extend(["📜 Logs de Auditoria", "📚 Catálogo de Treinamentos"])
 
-  for opt in opcoes:
-    if st.button(opt, use_container_width=True):
-      st.session_state["pagina"] = opt
-      st.rerun()
-
-pagina = st.session_state["pagina"]
+  pagina = st.radio("📌 Selecione a Página:", opcoes, key="navegacao_principal")
 
 
 # -------------------------------------------------------------------
@@ -493,6 +463,8 @@ def baixar_arquivo_supabase(path_name):
 # -------------------------------------------------------------------
 # PÁGINAS DO SISTEMA
 # -------------------------------------------------------------------
+
+# 1. DASHBOARD EXECUTIVO
 if pagina == "📊 Dashboard Executivo":
   st.markdown(
       '<div class="main-header">📊 Dashboard Geral de Performance e Compliance'
@@ -500,14 +472,17 @@ if pagina == "📊 Dashboard Executivo":
       unsafe_allow_html=True,
   )
 
-  res_reg = (
-      supabase.table("registros")
-      .select(
-          "data_realizacao, validade_meses, colaboradores(nome, departamento),"
-          " treinamentos(nome_curso, carga_horaria, classificacao)"
-      )
-      .execute()
-  )
+  try:
+    res_reg = (
+        supabase.table("registros")
+        .select(
+            "data_realizacao, validade_meses, colaboradores(nome, departamento),"
+            " treinamentos(nome_curso, carga_horaria, classificacao)"
+        )
+        .execute()
+    )
+  except Exception:
+    res_reg = type("obj", (object,), {"data": []})()
 
   res_colabs_count = (
       supabase.table("colaboradores").select("id", count="exact").execute()
@@ -615,7 +590,7 @@ if pagina == "📊 Dashboard Executivo":
       )
 
       k1.metric("👥 Colaboradores", df_colabs_total)
-      k2.metric("⏱️ Horas Capacitadas", f"{total_horas:.1f}h")
+      k2.metric("⏱️️ Horas Capacitadas", f"{total_horas:.1f}h")
       k3.metric("📈 Taxa Conformidade", f"{tx_conformidade:.1f}%")
       k4.metric("🟢 Em Dia", conformes)
       k5.metric("🔴 Vencidos", nao_conformes, delta_color="inverse")
@@ -652,6 +627,7 @@ if pagina == "📊 Dashboard Executivo":
         )
         st.plotly_chart(fig_bar, use_container_width=True)
 
+# 2. VISÃO DO COLABORADOR
 elif pagina == "👤 Visão do Colaborador":
   st.markdown(
       '<div class="main-header">👤 Prontuário Individual e Matriz de'
@@ -682,8 +658,6 @@ elif pagina == "👤 Visão do Colaborador":
     else:
       res_all_t = supabase.table("treinamentos").select("*").execute()
       df_lnt_cargo = pd.DataFrame(res_all_t.data)
-
-    total_mapeados = len(df_lnt_cargo)
 
     res_ind = (
         supabase.table("registros")
@@ -756,13 +730,14 @@ elif pagina == "👤 Visão do Colaborador":
             [2, 2, 2, 2, 2.5, 2]
         )
 
+        key_status = f"status_{cid}_{tid}"
+
         with col_c1:
-          key_st = f"status_{cid}_{tid}"
           novo_status = st.selectbox(
               "Status",
               ["🔴 Pendente", "🟢 Concluído"],
               index=1 if is_concluido else 0,
-              key=key_st,
+              key=key_status,
           )
         with col_c2:
           dt_def = (
@@ -834,17 +809,16 @@ elif pagina == "👤 Visão do Colaborador":
                     key=f"dl_f_{cid}_{tid}",
                 )
 
+        # AÇÃO DO BOTÃO SALVAR
         if st.button(
             f"💾 Salvar Atualização de '{nome_curso}'",
             key=f"btn_save_{cid}_{tid}",
         ):
           dt_str = nova_data.strftime("%Y-%m-%d")
-          status_escolhido = st.session_state.get(
-              f"status_{cid}_{tid}", novo_status
-          )
+          status_selecionado = st.session_state.get(key_status, novo_status)
 
           try:
-            if status_escolhido == "🟢 Concluído":
+            if status_selecionado == "🟢 Concluído":
               nome_forms_salvo = (
                   reg_info["Forms"] if is_concluido else "Sem anexo"
               )
@@ -856,6 +830,7 @@ elif pagina == "👤 Visão do Colaborador":
                     content_type=up_f.type,
                 )
 
+              # 1. Gera o PDF do Certificado
               nome_cert_auto = f"Certificado_AUTO_{cid}_{tid}_{dt_str}.pdf"
               pdf_bytes_cert = gerar_pdf_certificado(
                   colab_nome=str(colab_info["nome"]),
@@ -869,6 +844,7 @@ elif pagina == "👤 Visão do Colaborador":
                   or "Aplicador do Treinamento",
               )
 
+              # 2. Upload do PDF para o Storage
               salvar_arquivo_supabase(
                   nome_cert_auto, pdf_bytes_cert.getvalue()
               )
@@ -886,6 +862,7 @@ elif pagina == "👤 Visão do Colaborador":
                   "custo_real": 0.0,
               }
 
+              # 3. Garante atualização do registro ou insere um novo
               check_db = (
                   supabase.table("registros")
                   .select("id")
@@ -902,11 +879,10 @@ elif pagina == "👤 Visão do Colaborador":
               else:
                 supabase.table("registros").insert(payload).execute()
 
-              st.cache_data.clear()
               st.success(f"🎉 Certificado gerado para '{nome_curso}'!")
               st.rerun()
 
-            elif status_escolhido == "🔴 Pendente":
+            elif status_selecionado == "🔴 Pendente":
               check_db = (
                   supabase.table("registros")
                   .select("id, arquivo_evidencia, arquivo_forms")
@@ -924,8 +900,7 @@ elif pagina == "👤 Visão do Colaborador":
                     "id", r_del["id"]
                 ).execute()
 
-              st.cache_data.clear()
-              st.warning(f"🗑️️ Registro e certificado de '{nome_curso}' removidos!")
+              st.warning(f"🗑️ Registro e certificado de '{nome_curso}' removidos!")
               st.rerun()
 
           except Exception as err:
@@ -933,6 +908,7 @@ elif pagina == "👤 Visão do Colaborador":
 
         st.divider()
 
+# 3. EVOLUÇÃO POR TREINAMENTO
 elif pagina == "📈 Evolução por Treinamento":
   st.markdown(
       '<div class="main-header">📈 Evolução Histórica e Adesão por'
@@ -945,6 +921,7 @@ elif pagina == "📈 Evolução por Treinamento":
     t_sel = st.selectbox("Selecione o Treinamento:", df_t["nome_curso"].tolist())
     st.info(f"Exibindo métricas de evolução para: **{t_sel}**")
 
+# 4. LANÇAR TREINAMENTO
 elif pagina == "✍️ Lançar Treinamento":
   st.markdown(
       '<div class="main-header">✍️ Lançamento de Treinamentos Coletivos</div>',
@@ -952,6 +929,7 @@ elif pagina == "✍️ Lançar Treinamento":
   )
   st.info("Formulário de lançamento rápido de turmas.")
 
+# 5. CERTIFICADOS & PRESENÇA
 elif pagina == "📜 Certificados & Presença":
   st.markdown(
       '<div class="main-header">📜 Emissão de Listas de Presença e'
@@ -960,6 +938,7 @@ elif pagina == "📜 Certificados & Presença":
   )
   st.info("Central de download de certificados em lote.")
 
+# 6. RELATÓRIOS AUDITORIA
 elif pagina == "📂 Relatórios p/ Auditoria":
   st.markdown(
       '<div class="main-header">📂 Relatórios Consolidados de Compliance e'
@@ -968,6 +947,7 @@ elif pagina == "📂 Relatórios p/ Auditoria":
   )
   st.info("Exportação de relatórios em Excel/PDF para auditoria.")
 
+# 7. CATÁLOGO DE TREINAMENTOS
 elif pagina == "📚 Catálogo de Treinamentos":
   st.markdown(
       '<div class="main-header">📚 Catálogo de Treinamentos, Normas e'
@@ -1039,12 +1019,10 @@ elif pagina == "📚 Catálogo de Treinamentos":
               "aplicador_padrao": n_ap_nome.strip(),
               "aplicador_cargo_padrao": n_ap_cargo.strip(),
           }).execute()
-          st.cache_data.clear()
-          st.success(
-              f"Treinamento '{n_curso}' cadastrado no Supabase!"
-          )
+          st.success(f"Treinamento '{n_curso}' cadastrado no Supabase!")
           st.rerun()
 
+# 8. MATRIZ POR CARGO (LNT)
 elif pagina == "🎯 Matriz por Cargo (LNT)":
   st.markdown(
       '<div class="main-header">🎯 Matriz de Exigências de Treinamentos por Cargo'
@@ -1055,6 +1033,7 @@ elif pagina == "🎯 Matriz por Cargo (LNT)":
   df_m = pd.DataFrame(res_m.data)
   st.dataframe(df_m, use_container_width=True)
 
+# 9. GESTÃO DE USUÁRIOS
 elif pagina == "🔑 Gestão de Usuários":
   st.markdown(
       '<div class="main-header">🔑 Gestão de Acessos e Usuários</div>',
@@ -1064,6 +1043,7 @@ elif pagina == "🔑 Gestão de Usuários":
   df_u = pd.DataFrame(res_u.data)
   st.dataframe(df_u, use_container_width=True)
 
+# 10. GESTÃO ORÇAMENTÁRIA
 elif pagina == "💰 Gestão Orçamentária":
   st.markdown(
       '<div class="main-header">💰 Controle Orçamentário de Capacitação</div>',
@@ -1071,6 +1051,7 @@ elif pagina == "💰 Gestão Orçamentária":
   )
   st.info("Módulo de gestão de custos e orçamento anual de T&D.")
 
+# 11. GESTÃO DE COLABORADORES
 elif pagina == "👥 Gestão de Colaboradores":
   st.markdown(
       '<div class="main-header">👥 Gestão de Colaboradores</div>',
@@ -1080,6 +1061,7 @@ elif pagina == "👥 Gestão de Colaboradores":
   df_c = pd.DataFrame(res_c.data)
   st.dataframe(df_c, use_container_width=True)
 
+# 12. LOGS DE AUDITORIA
 elif pagina == "📜 Logs de Auditoria":
   st.markdown(
       '<div class="main-header">📜 Trilha de Auditoria (Audit Trail)</div>',
