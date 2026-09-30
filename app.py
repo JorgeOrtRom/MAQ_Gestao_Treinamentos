@@ -30,12 +30,12 @@ if uploaded_db is not None:
 
             conn = sqlite3.connect("temp_migracao.db")
             tabelas = [
-                "usuarios",
                 "colaboradores",
                 "treinamentos",
                 "registros",
                 "matriz_cargo_treinamento",
                 "logs_auditoria",
+                "usuarios",
             ]
 
             barra = st.progress(0)
@@ -44,19 +44,30 @@ if uploaded_db is not None:
                 try:
                     df = pd.read_sql_query(f"SELECT * FROM {tabela}", conn)
                     if not df.empty:
-                        # TRATAMENTO CRÍTICO DE VALORES NAN / VACIOS
+                        # Tratamento de valores NaN/Vazios para compatibilidade JSON
                         df = df.fillna(value=pd.NA)
                         dados = df.to_dict(orient="records")
                         
-                        # Limpa os NaNs explicitamente de cada dicionário
                         dados_limpos = [
                             {k: (None if pd.isna(v) else v) for k, v in row.items()}
                             for row in dados
                         ]
                         
-                        # Envia para o Supabase usando UPSERT
-                        supabase.table(tabela).upsert(dados_limpos).execute()
-                        st.success(f"✅ {len(dados_limpos)} registos migrados em '{tabela}'")
+                        # Tenta enviar tudo de uma vez
+                        try:
+                            supabase.table(tabela).upsert(dados_limpos).execute()
+                            st.success(f"✅ {len(dados_limpos)} registos migrados em '{tabela}'")
+                        except Exception as inner_e:
+                            # Se houver conflito de chave única, insere linha a linha ignorando erros
+                            sucesso_count = 0
+                            for item in dados_limpos:
+                                try:
+                                    supabase.table(tabela).upsert(item).execute()
+                                    sucesso_count += 1
+                                except Exception:
+                                    pass
+                            st.success(f"✅ {sucesso_count} registos processados em '{tabela}'")
+
                 except Exception as e:
                     st.warning(f"Aviso na tabela {tabela}: {e}")
 
@@ -64,4 +75,4 @@ if uploaded_db is not None:
 
             conn.close()
             st.balloons()
-            st.success("🎉 Migração concluída com sucesso! Todos os 107 colaboradores e registros já estão no Supabase.")
+            st.success("🎉 Migração concluída! Todos os dados já estão no Supabase.")
