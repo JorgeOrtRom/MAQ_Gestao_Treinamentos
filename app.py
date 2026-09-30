@@ -94,7 +94,7 @@ if st.session_state["usuario_logado"] is None:
         else:
             st.image("https://img.icons8.com/color/96/verified-badge.png", width=70)
             
-        st.title("Gestão MAQ")
+        st.title("Gestão de Treinamentos - MAQ")
         st.caption("🔒 Acesso Restrito ao Sistema de Compliance e Treinamentos (Supabase Cloud)")
         
         with st.form("form_login"):
