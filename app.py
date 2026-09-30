@@ -58,7 +58,6 @@ st.markdown(
 )
 
 
-# Funções utilitárias de limpeza de dados
 def limpar_valor(val):
   if pd.isna(val) or str(val).strip().lower() in ["nan", "none", "null", ""]:
     return None
@@ -158,10 +157,7 @@ if st.session_state["usuario_logado"] is None:
       )
 
     st.title("Gestão MAQ")
-    st.caption(
-        "🔒 Acesso Restrito ao Sistema de Compliance e Treinamentos (Supabase"
-        " Cloud)"
-    )
+    st.caption("🔒 Acesso Restrito ao Sistema de Compliance e Treinamentos")
 
     with st.form("form_login"):
       user_input = st.text_input("Usuário / Login")
@@ -265,7 +261,7 @@ pagina = st.session_state["pagina"]
 
 
 # -------------------------------------------------------------------
-# ELEMENTOS GRÁFICOS, MOLDURA E GERADORES DE PDF
+# GERADORES DE PDF E SUPABASE STORAGE
 # -------------------------------------------------------------------
 def criar_selo_oficial():
   d = Drawing(85, 85)
@@ -330,7 +326,6 @@ def desenhar_moldura_certificado(canvas, doc):
   canvas.setStrokeColor(colors.HexColor("#0F172A"))
   canvas.setLineWidth(4)
   canvas.rect(20, 20, doc.pagesize[0] - 40, doc.pagesize[1] - 40)
-
   canvas.setStrokeColor(colors.HexColor("#D97706"))
   canvas.setLineWidth(1.5)
   canvas.rect(26, 26, doc.pagesize[0] - 52, doc.pagesize[1] - 52)
@@ -665,124 +660,6 @@ def gerar_pdf_certificado(
   return buffer
 
 
-def gerar_pdf_lista_presenca(
-    curso_nome, carga_horaria, departamento_nome, lista_colabs, ano
-):
-  buffer = io.BytesIO()
-  doc = SimpleDocTemplate(
-      buffer,
-      pagesize=letter,
-      rightMargin=36,
-      leftMargin=36,
-      topMargin=36,
-      bottomMargin=36,
-  )
-  story = []
-  styles = getSampleStyleSheet()
-  sub_style = ParagraphStyle(
-      "LPSub",
-      parent=styles["Normal"],
-      fontSize=10,
-      leading=12,
-      textColor=colors.HexColor("#475569"),
-  )
-
-  logo_file = carregar_logo_empresa()
-  if logo_file:
-    try:
-      img = Image(logo_file, width=140, height=45)
-      img.hAlign = "CENTER"
-      story.append(img)
-      story.append(Spacer(1, 10))
-    except Exception:
-      pass
-
-  story.append(
-      Paragraph(
-          f"<b>LISTA DE PRESENÇA OFICIAL DE TREINAMENTO ({ano}) - MAQ</b>",
-          ParagraphStyle(
-              "LPTitle",
-              parent=styles["Heading1"],
-              fontSize=16,
-              leading=20,
-              textColor=colors.HexColor("#0F172A"),
-              alignment=1,
-          ),
-      )
-  )
-  story.append(Spacer(1, 10))
-
-  header_data = [
-      [
-          Paragraph(f"<b>Treinamento:</b> {curso_nome}", sub_style),
-          Paragraph(f"<b>Carga Horária:</b> {carga_horaria}h", sub_style),
-      ],
-      [
-          Paragraph(
-              f"<b>Setor/Departamento:</b> {departamento_nome}", sub_style
-          ),
-          Paragraph(f"<b>Data de Aplicação:</b> ____/____/{ano}", sub_style),
-      ],
-      [
-          Paragraph(
-              "<b>Gestora responsável MAQ:</b> Jéssica Rocha", sub_style
-          ),
-          Paragraph("<b>Aplicador:</b> ________________________", sub_style),
-      ],
-  ]
-  t_head = Table(header_data, colWidths=[270, 270])
-  t_head.setStyle(
-      TableStyle([
-          ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F1F5F9")),
-          ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#CBD5E1")),
-          ("PADDING", (0, 0), (-1, -1), 5),
-      ])
-  )
-  story.append(t_head)
-  story.append(Spacer(1, 15))
-
-  headers = [
-      "#",
-      "Nome do Colaborador",
-      "Cargo / Função",
-      "Assinatura do Participante",
-  ]
-  table_rows = [[Paragraph(f"<b>{h}</b>", sub_style) for h in headers]]
-
-  for idx, c in enumerate(lista_colabs, start=1):
-    table_rows.append([
-        Paragraph(str(idx), sub_style),
-        Paragraph(str(c["nome"]), sub_style),
-        Paragraph(str(c["cargo"] or "Operacional"), sub_style),
-        Paragraph("", sub_style),
-    ])
-
-  t_list = Table(table_rows, colWidths=[30, 200, 130, 180])
-  t_list.setStyle(
-      TableStyle([
-          ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E293B")),
-          ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-          ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#94A3B8")),
-          ("PADDING", (0, 0), (-1, -1), 6),
-      ])
-  )
-  story.append(t_list)
-  story.append(Spacer(1, 20))
-  story.append(
-      Paragraph(
-          "<b>Visto da Gestão MAQ (Jéssica Rocha):</b>"
-          " ___________________________ &nbsp;&nbsp;&nbsp;&nbsp;"
-          f" <b>Data:</b> ____/____/{ano}",
-          sub_style,
-      )
-  )
-
-  doc.build(story)
-  buffer.seek(0)
-  return buffer
-
-
-# Funções de interação com o Storage do Supabase Cloud
 def salvar_arquivo_supabase(
     path_name, bytes_data, content_type="application/pdf"
 ):
@@ -816,6 +693,84 @@ def baixar_arquivo_supabase(path_name):
     return res
   except Exception:
     return None
+
+
+# -------------------------------------------------------------------
+# CALLBACK DIRETO PARA SALVAR ALTERAÇÃO DE STATUS DE FORMA INSTANTÂNEA
+# -------------------------------------------------------------------
+def processar_mudanca_status(cid, tid, nome_curso, ch_val, colab_nome, colab_cargo):
+  key_status = f"status_{cid}_{tid}"
+  status_escolhido = st.session_state.get(key_status)
+
+  # Recupera data, aplicador e cargo dos componentes da linha
+  dt_val = st.session_state.get(f"data_{cid}_{tid}", dt_module.date.today())
+  dt_str = dt_val.strftime("%Y-%m-%d")
+  nome_ap = limpar_valor(st.session_state.get(f"inst_{cid}_{tid}")) or "Aplicador Técnico"
+  cargo_ap = limpar_valor(st.session_state.get(f"acargo_{cid}_{tid}")) or "Aplicador do Treinamento"
+
+  try:
+    if status_escolhido == "🟢 Concluído":
+      nome_cert_auto = f"Certificado_AUTO_{cid}_{tid}_{dt_str}.pdf"
+      pdf_bytes_cert = gerar_pdf_certificado(
+          colab_nome=str(colab_nome),
+          colab_cargo=str(colab_cargo or ""),
+          curso_nome=str(nome_curso),
+          carga_horaria=str(ch_val),
+          data_realizacao=dt_str,
+          aplicador_nome=nome_ap,
+          aplicador_cargo=cargo_ap,
+      )
+
+      salvar_arquivo_supabase(nome_cert_auto, pdf_bytes_cert.getvalue())
+
+      payload = {
+          "colaborador_id": cid,
+          "treinamento_id": tid,
+          "data_realizacao": dt_str,
+          "validade_meses": 12,
+          "status_planilha": "Concluído",
+          "arquivo_evidencia": nome_cert_auto,
+          "arquivo_forms": "Sem anexo",
+          "instrutor_nome": nome_ap,
+          "aplicador_cargo": cargo_ap,
+          "custo_real": 0.0,
+      }
+
+      check_db = (
+          supabase.table("registros")
+          .select("id")
+          .eq("colaborador_id", cid)
+          .eq("treinamento_id", tid)
+          .execute()
+      )
+
+      if check_db.data:
+        reg_id_existente = check_db.data[0]["id"]
+        supabase.table("registros").update(payload).eq("id", reg_id_existente).execute()
+      else:
+        supabase.table("registros").insert(payload).execute()
+
+      st.cache_data.clear()
+
+    elif status_escolhido == "🔴 Pendente":
+      check_db = (
+          supabase.table("registros")
+          .select("id, arquivo_evidencia, arquivo_forms")
+          .eq("colaborador_id", cid)
+          .eq("treinamento_id", tid)
+          .execute()
+      )
+
+      if check_db.data:
+        r_del = check_db.data[0]
+        deletar_arquivo_supabase(r_del.get("arquivo_evidencia"))
+        deletar_arquivo_supabase(r_del.get("arquivo_forms"))
+        supabase.table("registros").delete().eq("id", r_del["id"]).execute()
+
+      st.cache_data.clear()
+
+  except Exception as err:
+    st.error(f"Erro na atualização: {err}")
 
 
 # -------------------------------------------------------------------
@@ -1108,8 +1063,8 @@ elif pagina == "👤 Visão do Colaborador":
 
     st.divider()
     st.subheader(
-        "📋 Gestão Individual por Treinamento (Status, Dados do Aplicador e"
-        " Uploads)"
+        "📋 Gestão Individual por Treinamento (Atualização Automática ao Alterar"
+        " Status)"
     )
 
     for _, r_t in df_lnt_cargo.iterrows():
@@ -1138,23 +1093,15 @@ elif pagina == "👤 Visão do Colaborador":
         key_status = f"status_{cid}_{tid}"
 
         with col_c1:
-          # Lógica corrigida para impedir a perda de estado ao renderizar
-          options_status = ["🔴 Pendente", "🟢 Concluído"]
-          idx_default = 1 if is_concluido else 0
-
-          if key_status in st.session_state:
-            novo_status = st.selectbox(
-                "Status",
-                options_status,
-                key=key_status,
-            )
-          else:
-            novo_status = st.selectbox(
-                "Status",
-                options_status,
-                index=idx_default,
-                key=key_status,
-            )
+          # O Selectbox agora usa o callback instantâneo `on_change`
+          st.selectbox(
+              "Status",
+              ["🔴 Pendente", "🟢 Concluído"],
+              index=1 if is_concluido else 0,
+              key=key_status,
+              on_change=processar_mudanca_status,
+              args=(cid, tid, nome_curso, ch_val, colab_info["nome"], colab_info["cargo"]),
+          )
 
         with col_c2:
           dt_def = (
@@ -1162,7 +1109,7 @@ elif pagina == "👤 Visão do Colaborador":
               if is_concluido and reg_info["DataRealizacao"]
               else dt_module.date.today()
           )
-          nova_data = st.date_input(
+          st.date_input(
               "Data Aplicação", value=dt_def, key=f"data_{cid}_{tid}"
           )
         with col_c3:
@@ -1171,7 +1118,7 @@ elif pagina == "👤 Visão do Colaborador":
               if (is_concluido and reg_info["Instrutor"])
               else (r_t.get("aplicador_padrao") or "Aplicador Técnico")
           )
-          nome_aplicador = st.text_input(
+          st.text_input(
               "Nome Aplicador",
               value=limpar_valor(inst_def) or "",
               key=f"inst_{cid}_{tid}",
@@ -1185,7 +1132,7 @@ elif pagina == "👤 Visão do Colaborador":
                   or "Aplicador do Treinamento"
               )
           )
-          cargo_aplicador = st.text_input(
+          st.text_input(
               "Cargo Aplicador",
               value=limpar_valor(cargo_def) or "",
               key=f"acargo_{cid}_{tid}",
@@ -1225,107 +1172,6 @@ elif pagina == "👤 Visão do Colaborador":
                     file_name=forms_file,
                     key=f"dl_f_{cid}_{tid}",
                 )
-
-        # BOTÃO SALVAR REVISADO E COMPATÍVEL COM NUVEM
-        if st.button(
-            f"💾 Salvar Atualização de '{nome_curso}'",
-            key=f"btn_save_{cid}_{tid}",
-        ):
-          dt_str = nova_data.strftime("%Y-%m-%d")
-          status_selecionado = st.session_state.get(key_status, novo_status)
-
-          try:
-            if status_selecionado == "🟢 Concluído":
-              nome_forms_salvo = (
-                  reg_info["Forms"] if is_concluido else "Sem anexo"
-              )
-              if up_f is not None:
-                nome_forms_salvo = f"Forms_{cid}_{tid}_{dt_str}_{up_f.name}"
-                salvar_arquivo_supabase(
-                    nome_forms_salvo,
-                    up_f.getvalue(),
-                    content_type=up_f.type,
-                )
-
-              # 1. Gera o PDF do Certificado
-              nome_cert_auto = f"Certificado_AUTO_{cid}_{tid}_{dt_str}.pdf"
-              pdf_bytes_cert = gerar_pdf_certificado(
-                  colab_nome=str(colab_info["nome"]),
-                  colab_cargo=str(colab_info["cargo"] or ""),
-                  curso_nome=str(nome_curso),
-                  carga_horaria=str(ch_val),
-                  data_realizacao=dt_str,
-                  aplicador_nome=limpar_valor(nome_aplicador)
-                  or "Aplicador Técnico",
-                  aplicador_cargo=limpar_valor(cargo_aplicador)
-                  or "Aplicador do Treinamento",
-              )
-
-              # 2. Upload do PDF para o Storage do Supabase
-              salvar_arquivo_supabase(
-                  nome_cert_auto, pdf_bytes_cert.getvalue()
-              )
-
-              payload = {
-                  "colaborador_id": cid,
-                  "treinamento_id": tid,
-                  "data_realizacao": dt_str,
-                  "validade_meses": 12,
-                  "status_planilha": "Concluído",
-                  "arquivo_evidencia": nome_cert_auto,
-                  "arquivo_forms": nome_forms_salvo,
-                  "instrutor_nome": limpar_valor(nome_aplicador),
-                  "aplicador_cargo": limpar_valor(cargo_aplicador),
-                  "custo_real": 0.0,
-              }
-
-              # 3. Busca o registro e faz update filtrando pelo ID único da linha
-              check_db = (
-                  supabase.table("registros")
-                  .select("id")
-                  .eq("colaborador_id", cid)
-                  .eq("treinamento_id", tid)
-                  .execute()
-              )
-
-              if check_db.data:
-                reg_id_existente = check_db.data[0]["id"]
-                supabase.table("registros").update(payload).eq(
-                    "id", reg_id_existente
-                ).execute()
-              else:
-                supabase.table("registros").insert(payload).execute()
-
-              st.cache_data.clear()
-              st.success(f"🎉 Certificado gerado para '{nome_curso}'!")
-              st.rerun()
-
-            elif status_selecionado == "🔴 Pendente":
-              check_db = (
-                  supabase.table("registros")
-                  .select("id, arquivo_evidencia, arquivo_forms")
-                  .eq("colaborador_id", cid)
-                  .eq("treinamento_id", tid)
-                  .execute()
-              )
-
-              if check_db.data:
-                r_del = check_db.data[0]
-                deletar_arquivo_supabase(r_del.get("arquivo_evidencia"))
-                deletar_arquivo_supabase(r_del.get("arquivo_forms"))
-
-                supabase.table("registros").delete().eq(
-                    "id", r_del["id"]
-                ).execute()
-
-              st.cache_data.clear()
-              st.warning(
-                  f"🗑️ Registro e certificado de '{nome_curso}' removidos!"
-              )
-              st.rerun()
-
-          except Exception as err:
-            st.error(f"Erro na gravação do registro: {err}")
 
         st.divider()
 
