@@ -660,6 +660,123 @@ def gerar_pdf_certificado(
   return buffer
 
 
+def gerar_pdf_lista_presenca(
+    curso_nome, carga_horaria, departamento_nome, lista_colabs, ano
+):
+  buffer = io.BytesIO()
+  doc = SimpleDocTemplate(
+      buffer,
+      pagesize=letter,
+      rightMargin=36,
+      leftMargin=36,
+      topMargin=36,
+      bottomMargin=36,
+  )
+  story = []
+  styles = getSampleStyleSheet()
+  sub_style = ParagraphStyle(
+      "LPSub",
+      parent=styles["Normal"],
+      fontSize=10,
+      leading=12,
+      textColor=colors.HexColor("#475569"),
+  )
+
+  logo_file = carregar_logo_empresa()
+  if logo_file:
+    try:
+      img = Image(logo_file, width=140, height=45)
+      img.hAlign = "CENTER"
+      story.append(img)
+      story.append(Spacer(1, 10))
+    except Exception:
+      pass
+
+  story.append(
+      Paragraph(
+          f"<b>LISTA DE PRESENÇA OFICIAL DE TREINAMENTO ({ano}) - MAQ</b>",
+          ParagraphStyle(
+              "LPTitle",
+              parent=styles["Heading1"],
+              fontSize=16,
+              leading=20,
+              textColor=colors.HexColor("#0F172A"),
+              alignment=1,
+          ),
+      )
+  )
+  story.append(Spacer(1, 10))
+
+  header_data = [
+      [
+          Paragraph(f"<b>Treinamento:</b> {curso_nome}", sub_style),
+          Paragraph(f"<b>Carga Horária:</b> {carga_horaria}h", sub_style),
+      ],
+      [
+          Paragraph(
+              f"<b>Setor/Departamento:</b> {departamento_nome}", sub_style
+          ),
+          Paragraph(f"<b>Data de Aplicação:</b> ____/____/{ano}", sub_style),
+      ],
+      [
+          Paragraph(
+              "<b>Gestora responsável MAQ:</b> Jéssica Rocha", sub_style
+          ),
+          Paragraph("<b>Aplicador:</b> ________________________", sub_style),
+      ],
+  ]
+  t_head = Table(header_data, colWidths=[270, 270])
+  t_head.setStyle(
+      TableStyle([
+          ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F1F5F9")),
+          ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#CBD5E1")),
+          ("PADDING", (0, 0), (-1, -1), 5),
+      ])
+  )
+  story.append(t_head)
+  story.append(Spacer(1, 15))
+
+  headers = [
+      "#",
+      "Nome do Colaborador",
+      "Cargo / Função",
+      "Assinatura do Participante",
+  ]
+  table_rows = [[Paragraph(f"<b>{h}</b>", sub_style) for h in headers]]
+
+  for idx, c in enumerate(lista_colabs, start=1):
+    table_rows.append([
+        Paragraph(str(idx), sub_style),
+        Paragraph(str(c["nome"]), sub_style),
+        Paragraph(str(c["cargo"] or "Operacional"), sub_style),
+        Paragraph("", sub_style),
+    ])
+
+  t_list = Table(table_rows, colWidths=[30, 200, 130, 180])
+  t_list.setStyle(
+      TableStyle([
+          ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E293B")),
+          ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+          ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#94A3B8")),
+          ("PADDING", (0, 0), (-1, -1), 6),
+      ])
+  )
+  story.append(t_list)
+  story.append(Spacer(1, 20))
+  story.append(
+      Paragraph(
+          "<b>Visto da Gestão MAQ (Jéssica Rocha):</b>"
+          " ___________________________ &nbsp;&nbsp;&nbsp;&nbsp;"
+          f" <b>Data:</b> ____/____/{ano}",
+          sub_style,
+      )
+  )
+
+  doc.build(story)
+  buffer.seek(0)
+  return buffer
+
+
 def salvar_arquivo_supabase(
     path_name, bytes_data, content_type="application/pdf"
 ):
@@ -1540,7 +1657,7 @@ elif pagina == "📜 Certificados & Presença":
 
   with t_cert:
     st.subheader(
-        "📜 Gerador de Certificado em PDF com Logo e 3 Assinaturas"
+        "📜 Gerador de Certificado em PDF com Logo e 3 Assinatures"
     )
     res_regs = (
         supabase.table("registros")
