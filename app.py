@@ -979,7 +979,7 @@ if pagina == "📊 Dashboard Executivo":
         st.plotly_chart(fig_bar, use_container_width=True)
 
 # -------------------------------------------------------------------
-# 2. VISÃO DO COLABORADOR
+# 2. VISÃO DO COLABORADOR (ISOLAMENTO DE ESTADO E SEM ST.FORM)
 # -------------------------------------------------------------------
 elif pagina == "👤 Visão do Colaborador":
   st.markdown(
@@ -1108,8 +1108,7 @@ elif pagina == "👤 Visão do Colaborador":
 
     st.divider()
     st.subheader(
-        "📋 Gestão Individual por Treinamento (Status, Dados do Aplicador e"
-        " Uploads)"
+        "📋 Gestão Individual por Treinamento (Status, Dados do Aplicador e Uploads)"
     )
 
     for _, r_t in df_lnt_cargo.iterrows():
@@ -1129,7 +1128,7 @@ elif pagina == "👤 Visão do Colaborador":
 
       key_status = f"status_{cid}_{tid}"
 
-      with st.form(key=f"form_treino_{cid}_{tid}"):
+      with st.container():
         st.markdown(
             f"#### 📚 {nome_curso} ({ch_val}h - {r_t['classificacao']})"
         )
@@ -1219,8 +1218,9 @@ elif pagina == "👤 Visão do Colaborador":
                     key=f"dl_f_{cid}_{tid}",
                 )
 
-        btn_submit = st.form_submit_button(
+        btn_submit = st.button(
             f"💾 Salvar Atualização de '{nome_curso}'",
+            key=f"btn_save_{cid}_{tid}",
             use_container_width=True,
         )
 
@@ -1657,7 +1657,7 @@ elif pagina == "📜 Certificados & Presença":
 
   with t_cert:
     st.subheader(
-        "📜 Gerador de Certificado em PDF com Logo e 3 Assinatures"
+        "📜 Gerador de Certificado em PDF com Logo e 3 Assinaturas"
     )
     res_regs = (
         supabase.table("registros")
