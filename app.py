@@ -979,7 +979,7 @@ if pagina == "📊 Dashboard Executivo":
         st.plotly_chart(fig_bar, use_container_width=True)
 
 # -------------------------------------------------------------------
-# 2. VISÃO DO COLABORADOR (ISOLAMENTO DE ESTADO E SEM ST.FORM)
+# 2. VISÃO DO COLABORADOR
 # -------------------------------------------------------------------
 elif pagina == "👤 Visão do Colaborador":
   st.markdown(
@@ -1108,7 +1108,8 @@ elif pagina == "👤 Visão do Colaborador":
 
     st.divider()
     st.subheader(
-        "📋 Gestão Individual por Treinamento (Status, Dados do Aplicador e Uploads)"
+        "📋 Gestão Individual por Treinamento (Status, Dados do Aplicador e"
+        " Uploads)"
     )
 
     for _, r_t in df_lnt_cargo.iterrows():
@@ -1128,7 +1129,7 @@ elif pagina == "👤 Visão do Colaborador":
 
       key_status = f"status_{cid}_{tid}"
 
-      with st.container():
+      with st.form(key=f"form_treino_{cid}_{tid}"):
         st.markdown(
             f"#### 📚 {nome_curso} ({ch_val}h - {r_t['classificacao']})"
         )
@@ -1218,9 +1219,8 @@ elif pagina == "👤 Visão do Colaborador":
                     key=f"dl_f_{cid}_{tid}",
                 )
 
-        btn_submit = st.button(
+        btn_submit = st.form_submit_button(
             f"💾 Salvar Atualização de '{nome_curso}'",
-            key=f"btn_save_{cid}_{tid}",
             use_container_width=True,
         )
 
@@ -1487,7 +1487,7 @@ elif pagina == "📚 Catálogo de Treinamentos":
   t_cat_list, t_cat_add, t_cat_edit = st.tabs([
       "📋 Listagem Completa",
       "➕ Incluir Novo Treinamento",
-      "✏️ Editar Cadastro / Aplicador Padrão",
+      "✏️️ Editar Cadastro / Aplicador Padrão",
   ])
 
   with t_cat_list:
