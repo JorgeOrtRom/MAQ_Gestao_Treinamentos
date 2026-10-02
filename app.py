@@ -28,7 +28,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Estilização CSS
+# Estilização CSS Original
 st.markdown(
     """
 <style>
@@ -1012,11 +1012,6 @@ elif pagina == "👤 Visão do Colaborador":
 
       key_status = f"status_{cid}_{tid}"
 
-      if key_status not in st.session_state:
-        st.session_state[key_status] = (
-            "🟢 Concluído" if is_concluido else "🔴 Pendente"
-        )
-
       with st.form(key=f"form_treino_{cid}_{tid}"):
         st.markdown(
             f"#### 📚 {nome_curso} ({ch_val}h - {r_t['classificacao']})"
@@ -1029,6 +1024,7 @@ elif pagina == "👤 Visão do Colaborador":
           novo_status = st.selectbox(
               "Status",
               options=["🔴 Pendente", "🟢 Concluído"],
+              index=1 if is_concluido else 0,
               key=key_status,
           )
 
@@ -1175,7 +1171,6 @@ elif pagina == "👤 Visão do Colaborador":
               else:
                 supabase.table("registros").insert(payload).execute()
 
-              st.session_state[key_status] = "🟢 Concluído"
               st.cache_data.clear()
               st.success(f"🎉 Certificado gerado para '{nome_curso}'!")
               st.rerun()
@@ -1198,7 +1193,6 @@ elif pagina == "👤 Visão do Colaborador":
                     "id", r_del["id"]
                 ).execute()
 
-              st.session_state[key_status] = "🔴 Pendente"
               st.cache_data.clear()
               st.warning(
                   f"🗑️ Registro e certificado de '{nome_curso}' removidos!"
@@ -1358,7 +1352,6 @@ elif pagina == "✍️ Lançar Treinamento":
             "LANÇAMENTO DE TREINAMENTO",
             f"Treino ID {tid} para Colab ID {cid}",
         )
-        st.cache_data.clear()
         st.success(
             "🎉 Treinamento gravado e Certificado"
             f" `{nome_cert_auto}` gerado com sucesso!"
@@ -1447,7 +1440,6 @@ elif pagina == "📚 Catálogo de Treinamentos":
               "INCLUSÃO TREINAMENTO",
               f"Incluído curso: {n_curso}",
           )
-          st.cache_data.clear()
           st.success(f"Treinamento '{n_curso}' adicionado com sucesso!")
           st.rerun()
 
@@ -1529,7 +1521,6 @@ elif pagina == "📚 Catálogo de Treinamentos":
               "EDIÇÃO TREINAMENTO",
               f"Atualizado curso ID {row_e['id']}: {e_curso}",
           )
-          st.cache_data.clear()
           st.success("Cadastro do treinamento atualizado no catálogo!")
           st.rerun()
 
