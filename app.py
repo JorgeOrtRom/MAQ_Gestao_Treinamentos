@@ -514,7 +514,7 @@ if pagina == "📊 Dashboard Executivo":
             st.plotly_chart(fig_bar, use_container_width=True)
 
 # -------------------------------------------------------------------
-# 2. VISÃO DO COLABORADOR
+# 2. VISÃO DO COLABORADOR (COM SALVAMENTO CORRIGIDO E FORMS)
 # -------------------------------------------------------------------
 elif pagina == "👤 Visão do Colaborador":
     st.markdown(f'<div class="main-header">👤 Prontuário Individual e Matriz de Participação ({ano_exercicio})</div>', unsafe_allow_html=True)
@@ -586,24 +586,23 @@ elif pagina == "👤 Visão do Colaborador":
         kc1.metric("🎯 Exigidos p/ Cargo", f"{total_mapeados} Cursos")
         kc2.metric("✅ Concluídos no Ano", f"{qtd_realizados} Cursos")
         k3.metric("⏳ Pendentes no Ano", f"{qtd_pendentes} Cursos")
-        kc4.metric("⏱️️ Horas Cumpridas", f"{horas_acumuladas:.1f}h")
+        kc4.metric("⏱ Horas Cumpridas", f"{horas_acumuladas:.1f}h")
         
         st.divider()
         st.subheader("📋 Gestão Individual por Treinamento (Status, Dados do Aplicador e Uploads)")
-        
-        ids_realizados = df_realizados['TreinamentoID'].tolist() if not df_realizados.empty else []
         
         for _, r_t in df_lnt_cargo.iterrows():
             tid = r_t['id']
             nome_curso = r_t['nome_curso']
             ch_val = r_t['carga_horaria']
             
-            is_concluido = tid in ids_realizados
-            reg_info = df_realizados[df_realizados['TreinamentoID'] == tid].iloc[0] if is_concluido else None
+            reg_filtrado = df_realizados[df_realizados['TreinamentoID'] == tid]
+            is_concluido = not reg_filtrado.empty
+            reg_info = reg_filtrado.iloc[0] if is_concluido else None
             
-            with st.container():
+            with st.form(key=f"form_colab_{cid}_{tid}"):
                 st.markdown(f"#### 📚 {nome_curso} ({ch_val}h - {r_t['classificacao']})")
-                col_c1, col_c2, col_c3, col_c4, col_c5, col_c6 = st.columns([2, 2, 2, 2, 2.5, 2])
+                col_c1, col_c2, col_c3, col_c4, col_c5 = st.columns([2, 2, 2, 2, 2.5])
                 
                 with col_c1:
                     novo_status = st.selectbox(
@@ -618,7 +617,6 @@ elif pagina == "👤 Visão do Colaborador":
                     nova_data = st.date_input("Data Aplicação", value=dt_def, key=f"data_{cid}_{tid}")
                     
                 with col_c3:
-                    # Puxa o aplicador gravado no registro OU o aplicador padrão do Catálogo
                     inst_def = reg_info['Instrutor'] if (is_concluido and reg_info['Instrutor']) else (r_t['aplicador_padrao'] or "Aplicador Técnico")
                     nome_aplicador = st.text_input("Nome do Aplicador", value=inst_def, key=f"inst_{cid}_{tid}")
                     
@@ -628,29 +626,15 @@ elif pagina == "👤 Visão do Colaborador":
                     
                 with col_c5:
                     up_f = st.file_uploader("📎 Anexar Forms / Lista", type=["pdf", "png", "jpg"], key=f"up_{cid}_{tid}")
-                    
-                with col_c6:
-                    st.write("📄 **Ações / Arquivos:**")
-                    if is_concluido and reg_info is not None:
-                        cert_file = reg_info['Evidencia']
-                        cert_path = os.path.join(UPLOADS_DIR, str(cert_file))
-                        if os.path.exists(cert_path):
-                            with open(cert_path, "rb") as f_c:
-                                st.download_button("🎓 Baixar Certificado", f_c.read(), file_name=str(cert_file), key=f"dl_c_{cid}_{tid}")
-                                
-                        forms_file = reg_info['Forms']
-                        if forms_file and forms_file not in ["Sem anexo", "None", "nan"]:
-                            forms_path = os.path.join(UPLOADS_DIR, str(forms_file))
-                            if os.path.exists(forms_path):
-                                with open(forms_path, "rb") as f_f:
-                                    st.download_button("📎 Baixar Forms/Lista", f_f.read(), file_name=str(forms_file), key=f"dl_f_{cid}_{tid}")
-                                    
-                if st.button(f"💾 Salvar Atualização de '{nome_curso}'", key=f"btn_save_{cid}_{tid}"):
+                
+                btn_salvar = st.form_submit_button(f"💾 Salvar Atualização de '{nome_curso}'", use_container_width=True)
+
+                if btn_salvar:
                     c = conn.cursor()
                     dt_str = nova_data.strftime('%Y-%m-%d')
                     
                     if novo_status == "🟢 Concluído":
-                        nome_forms_salvo = reg_info['Forms'] if is_concluido else "Sem anexo"
+                        nome_forms_salvo = reg_info['Forms'] if (is_concluido and reg_info['Forms']) else "Sem anexo"
                         if up_f is not None:
                             nome_forms_salvo = f"Forms_{cid}_{tid}_{dt_str}_{up_f.name}"
                             with open(os.path.join(UPLOADS_DIR, nome_forms_salvo), "wb") as f:
@@ -679,7 +663,7 @@ elif pagina == "👤 Visão do Colaborador":
                             c.execute("UPDATE registros SET data_realizacao=?, arquivo_evidencia=?, arquivo_forms=?, instrutor_nome=?, aplicador_cargo=? WHERE colaborador_id=? AND treinamento_id=? AND strftime('%Y', data_realizacao)=?", (dt_str, nome_cert_auto, nome_forms_salvo, nome_aplicador, cargo_aplicador, cid, tid, str(ano_exercicio)))
                             
                         conn.commit()
-                        st.success(f"🎉 Treinamento '{nome_curso}' atualizado e Certificado Oficial gerado!")
+                        st.success(f"🎉 Treinamento '{nome_curso}' atualizado e salvo no banco de dados!")
                         st.rerun()
                         
                     elif novo_status == "🔴 Pendente" and is_concluido:
@@ -695,8 +679,24 @@ elif pagina == "👤 Visão do Colaborador":
                         registrar_log(st.session_state["nome_usuario"], "EXCLUSÃO DE REGISTRO", f"Removido treinamento ID {tid} do colaborador ID {cid}")
                         st.warning(f"🗑️ Registro e Certificado de '{nome_curso}' foram excluídos!")
                         st.rerun()
-                        
-                st.divider()
+
+            if is_concluido and reg_info is not None:
+                col_dl1, col_dl2 = st.columns(2)
+                with col_dl1:
+                    cert_file = reg_info['Evidencia']
+                    cert_path = os.path.join(UPLOADS_DIR, str(cert_file))
+                    if os.path.exists(cert_path):
+                        with open(cert_path, "rb") as f_c:
+                            st.download_button("🎓 Baixar Certificado", f_c.read(), file_name=str(cert_file), key=f"dl_c_{cid}_{tid}")
+                with col_dl2:
+                    forms_file = reg_info['Forms']
+                    if forms_file and forms_file not in ["Sem anexo", "None", "nan"]:
+                        forms_path = os.path.join(UPLOADS_DIR, str(forms_file))
+                        if os.path.exists(forms_path):
+                            with open(forms_path, "rb") as f_f:
+                                st.download_button("📎 Baixar Forms/Lista", f_f.read(), file_name=str(forms_file), key=f"dl_f_{cid}_{tid}")
+            
+            st.divider()
 
 # -------------------------------------------------------------------
 # 3. LANÇAR TREINAMENTO
@@ -720,7 +720,6 @@ elif pagina == "✍️ Lançar Treinamento":
                 treino_sel = st.selectbox("Selecione o Treinamento", options=list(treino_dict.keys()))
                 validade = st.number_input("Validade da Reciclagem (em meses)", min_value=1, max_value=60, value=12)
                 
-            # Recupera o aplicador padrão do treinamento selecionado
             _, _, _, _, _, ap_padrao_txt, ap_cargo_padrao_txt = treino_dict[treino_sel]
             
             c_a1, c_a2 = st.columns(2)
