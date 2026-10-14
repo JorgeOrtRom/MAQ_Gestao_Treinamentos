@@ -56,7 +56,7 @@ def get_db_connection():
 
 conn = get_db_connection()
 
-# Cria as tabelas necessárias e adequa o banco de dados
+# Cria as tabelas necessárias, adequa o banco de dados e insere dados padrão se estiver vazio
 def adequar_banco_dados():
     c = conn.cursor()
     
@@ -71,14 +71,6 @@ def adequar_banco_dados():
         )
     ''')
     
-    # Insere usuários padrão caso a tabela esteja vazia
-    c.execute("SELECT COUNT(*) FROM usuarios")
-    if c.fetchone()[0] == 0:
-        c.execute("INSERT INTO usuarios (login, senha, nome, perfil) VALUES ('admin', 'admin123', 'Administrador', 'Admin')")
-        c.execute("INSERT INTO usuarios (login, senha, nome, perfil) VALUES ('auditor', 'auditor123', 'Auditor Interno', 'Auditor')")
-        c.execute("INSERT INTO usuarios (login, senha, nome, perfil) VALUES ('gestor', 'gestor123', 'Gestor de Área', 'Gestor')")
-        conn.commit()
-
     # 2. Tabela de Colaboradores
     c.execute('''
         CREATE TABLE IF NOT EXISTS colaboradores (
@@ -142,22 +134,46 @@ def adequar_banco_dados():
             detalhes TEXT
         )
     ''')
+    conn.commit()
 
-    # Garantia de colunas legadas em bancos preexistentes
-    try: c.execute("ALTER TABLE registros ADD COLUMN arquivo_forms TEXT"); conn.commit()
-    except sqlite3.OperationalError: pass
-    
-    try: c.execute("ALTER TABLE registros ADD COLUMN instrutor_nome TEXT"); conn.commit()
-    except sqlite3.OperationalError: pass
-    
-    try: c.execute("ALTER TABLE registros ADD COLUMN aplicador_cargo TEXT"); conn.commit()
-    except sqlite3.OperationalError: pass
+    # --- POVOAMENTO INICIAL (SEED) CASO O BANCO ESTEJA VAZIO ---
+    c.execute("SELECT COUNT(*) FROM usuarios")
+    if c.fetchone()[0] == 0:
+        c.execute("INSERT INTO usuarios (login, senha, nome, perfil) VALUES ('admin', 'admin123', 'Administrador', 'Admin')")
+        c.execute("INSERT INTO usuarios (login, senha, nome, perfil) VALUES ('auditor', 'auditor123', 'Auditor Interno', 'Auditor')")
+        c.execute("INSERT INTO usuarios (login, senha, nome, perfil) VALUES ('gestor', 'gestor123', 'Gestor de Área', 'Gestor')")
+        conn.commit()
 
-    try: c.execute("ALTER TABLE treinamentos ADD COLUMN aplicador_padrao TEXT"); conn.commit()
-    except sqlite3.OperationalError: pass
+    c.execute("SELECT COUNT(*) FROM colaboradores")
+    if c.fetchone()[0] == 0:
+        c.execute("INSERT INTO colaboradores (nome, departamento, cargo, gestor, genero, email) VALUES ('Carlos Silva', 'OPERAÇÃO', 'Operador de Máquinas', 'Roberto Alves', 'Masculino', 'carlos@empresa.com')")
+        c.execute("INSERT INTO colaboradores (nome, departamento, cargo, gestor, genero, email) VALUES ('Ana Souza', 'MANUTENÇÃO', 'Técnica de Manutenção', 'Roberto Alves', 'Feminino', 'ana@empresa.com')")
+        c.execute("INSERT INTO colaboradores (nome, departamento, cargo, gestor, genero, email) VALUES ('João Pereira', 'EXECUÇÃO', 'Auxiliar Operacional', 'Mariana Costa', 'Masculino', 'joao@empresa.com')")
+        conn.commit()
 
-    try: c.execute("ALTER TABLE treinamentos ADD COLUMN aplicador_cargo_padrao TEXT"); conn.commit()
-    except sqlite3.OperationalError: pass
+    c.execute("SELECT COUNT(*) FROM treinamentos")
+    if c.fetchone()[0] == 0:
+        c.execute("INSERT INTO treinamentos (nome_curso, carga_horaria, frequencia, classificacao, custo_estimado, aplicador_padrao, aplicador_cargo_padrao) VALUES ('NR-10 Segurança em Elétrica', 16.0, 'Anual', 'Obrigatório (NR)', 250.0, 'Eng. Carlos Eduardo', 'Engenheiro de Segurança')")
+        c.execute("INSERT INTO treinamentos (nome_curso, carga_horaria, frequencia, classificacao, custo_estimado, aplicador_padrao, aplicador_cargo_padrao) VALUES ('NR-35 Trabalho em Altura', 8.0, 'Anual', 'Obrigatório (NR)', 150.0, 'Téc. Fernando Ramos', 'Técnico em Segurança')")
+        c.execute("INSERT INTO treinamentos (nome_curso, carga_horaria, frequencia, classificacao, custo_estimado, aplicador_padrao, aplicador_cargo_padrao) VALUES ('Integração de Segurança e SSO', 4.0, 'Eventual / Admissional', 'Integração', 50.0, 'Jéssica Rocha', 'Gestora de MAQ / SSO')")
+        conn.commit()
+
+    c.execute("SELECT COUNT(*) FROM matriz_cargo_treinamento")
+    if c.fetchone()[0] == 0:
+        c.execute("INSERT INTO matriz_cargo_treinamento (cargo, treinamento_id) VALUES ('Operador de Máquinas', 1)")
+        c.execute("INSERT INTO matriz_cargo_treinamento (cargo, treinamento_id) VALUES ('Operador de Máquinas', 2)")
+        c.execute("INSERT INTO matriz_cargo_treinamento (cargo, treinamento_id) VALUES ('Operador de Máquinas', 3)")
+        c.execute("INSERT INTO matriz_cargo_treinamento (cargo, treinamento_id) VALUES ('Técnica de Manutenção', 1)")
+        c.execute("INSERT INTO matriz_cargo_treinamento (cargo, treinamento_id) VALUES ('Técnica de Manutenção', 3)")
+        c.execute("INSERT INTO matriz_cargo_treinamento (cargo, treinamento_id) VALUES ('Auxiliar Operacional', 3)")
+        conn.commit()
+
+    c.execute("SELECT COUNT(*) FROM registros")
+    if c.fetchone()[0] == 0:
+        dt_hoje = datetime.date.today().strftime('%Y-%m-%d')
+        c.execute("INSERT INTO registros (colaborador_id, treinamento_id, data_realizacao, validade_meses, status_planilha, arquivo_evidencia, arquivo_forms, instrutor_nome, aplicador_cargo, custo_real) VALUES (1, 1, ?, 12, 'Concluído', 'Sem anexo', 'Sem anexo', 'Eng. Carlos Eduardo', 'Engenheiro de Segurança', 250.0)", (dt_hoje,))
+        c.execute("INSERT INTO registros (colaborador_id, treinamento_id, data_realizacao, validade_meses, status_planilha, arquivo_evidencia, arquivo_forms, instrutor_nome, aplicador_cargo, custo_real) VALUES (2, 3, ?, 12, 'Concluído', 'Sem anexo', 'Sem anexo', 'Jéssica Rocha', 'Gestora de MAQ / SSO', 50.0)", (dt_hoje,))
+        conn.commit()
 
 adequar_banco_dados()
 
@@ -633,168 +649,4 @@ elif pagina == "👤 Visão do Colaborador":
             JOIN treinamentos t ON r.treinamento_id = t.id
             WHERE r.colaborador_id = ? AND strftime('%Y', r.data_realizacao) = ?
         '''
-        df_realizados = pd.read_sql_query(query_ind, conn, params=(cid, str(ano_exercicio)))
-        
-        qtd_realizados = len(df_realizados)
-        qtd_pendentes = max(0, total_mapeados - qtd_realizados)
-        pct_concluido = (qtd_realizados / total_mapeados * 100) if total_mapeados > 0 else 0.0
-        horas_acumuladas = df_realizados['Horas'].sum() if not df_realizados.empty else 0.0
-        
-        c_f1, c_f2 = st.columns([3, 1])
-        with c_f1:
-            st.markdown(f"""
-            <div class="colab-card">
-                <h3 style="margin-top:0;">👤 <b>{colab_info['nome']}</b></h3>
-                <p style="margin-bottom:5px;">💼 <b>Cargo:</b> {colab_info['cargo'] or 'Não informado'} &nbsp;|&nbsp; 👔 <b>Gestor Direto:</b> {colab_info['gestor'] or 'Não informado'}</p>
-                <p style="margin-bottom:0;">🏢 <b>Departamento:</b> {colab_info['departamento']} &nbsp;|&nbsp; ✉️ <b>E-mail:</b> {colab_info['email'] or 'N/A'}</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        with c_f2:
-            st.write(f"📄 **Prontuário {ano_exercicio}**")
-            pdf_bytes = gerar_pdf_prontuario(colab_info, df_realizados, total_mapeados, ano_exercicio)
-            st.download_button(
-                label="🖨️ Baixar Prontuário PDF",
-                data=pdf_bytes,
-                file_name=f"Prontuario_{colab_info['nome'].replace(' ', '_')}_{ano_exercicio}.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
-            
-        st.subheader(f"📊 Evolução de Treinamentos Mapeados ({ano_exercicio})")
-        st.write(f"**Progresso:** `{qtd_realizados}` de `{total_mapeados}` cursos exigidos concluídos em {ano_exercicio} (**{pct_concluido:.1f}%**)")
-        st.progress(min(pct_concluido / 100.0, 1.0))
-        
-        kc1, kc2, k3, kc4 = st.columns(4)
-        kc1.metric("🎯 Exigidos p/ Cargo", f"{total_mapeados} Cursos")
-        kc2.metric("✅ Concluídos no Ano", f"{qtd_realizados} Cursos")
-        kc3.metric("⏳ Pendentes no Ano", f"{qtd_pendentes} Cursos")
-        kc4.metric("⏱ Horas Cumpridas", f"{horas_acumuladas:.1f}h")
-        
-        st.divider()
-        st.subheader("📋 Gestão Individual por Treinamento (Status, Dados do Aplicador e Uploads)")
-        
-        for _, r_t in df_lnt_cargo.iterrows():
-            tid = r_t['id']
-            nome_curso = r_t['nome_curso']
-            ch_val = r_t['carga_horaria']
-            
-            reg_filtrado = df_realizados[df_realizados['TreinamentoID'] == tid]
-            is_concluido = not reg_filtrado.empty
-            reg_info = reg_filtrado.iloc[0] if is_concluido else None
-            
-            with st.form(key=f"form_colab_{cid}_{tid}"):
-                st.markdown(f"#### 📚 {nome_curso} ({ch_val}h - {r_t['classificacao']})")
-                col_c1, col_c2, col_c3, col_c4, col_c5 = st.columns([2, 2, 2, 2, 2.5])
-                
-                with col_c1:
-                    novo_status = st.selectbox(
-                        "Status",
-                        options=["🔴 Pendente", "🟢 Concluído"],
-                        index=1 if is_concluido else 0,
-                        key=f"status_{cid}_{tid}"
-                    )
-                    
-                with col_c2:
-                    dt_def = pd.to_datetime(reg_info['DataRealizacao']).date() if is_concluido else datetime.date.today()
-                    nova_data = st.date_input("Data Aplicação", value=dt_def, key=f"data_{cid}_{tid}")
-                    
-                with col_c3:
-                    inst_def = reg_info['Instrutor'] if (is_concluido and reg_info['Instrutor']) else (r_t['aplicador_padrao'] or "Aplicador Técnico")
-                    nome_aplicador = st.text_input("Nome do Aplicador", value=inst_def, key=f"inst_{cid}_{tid}")
-                    
-                with col_c4:
-                    cargo_def = reg_info['AplicadorCargo'] if (is_concluido and 'AplicadorCargo' in reg_info and reg_info['AplicadorCargo']) else (r_t['aplicador_cargo_padrao'] or "Aplicador do Treinamento")
-                    cargo_aplicador = st.text_input("Cargo do Aplicador", value=cargo_def, key=f"acargo_{cid}_{tid}")
-                    
-                with col_c5:
-                    up_f = st.file_uploader("📎 Anexar Forms / Lista", type=["pdf", "png", "jpg"], key=f"up_{cid}_{tid}")
-                
-                btn_salvar = st.form_submit_button(f"💾 Salvar Atualização de '{nome_curso}'", use_container_width=True)
-
-                if btn_salvar:
-                    c = conn.cursor()
-                    dt_str = nova_data.strftime('%Y-%m-%d')
-                    
-                    if novo_status == "🟢 Concluído":
-                        nome_forms_salvo = reg_info['Forms'] if (is_concluido and reg_info['Forms']) else "Sem anexo"
-                        if up_f is not None:
-                            nome_forms_salvo = f"Forms_{cid}_{tid}_{dt_str}_{up_f.name}"
-                            with open(os.path.join(UPLOADS_DIR, nome_forms_salvo), "wb") as f:
-                                f.write(up_f.getbuffer())
-                                
-                        nome_cert_auto = f"Certificado_AUTO_{cid}_{tid}_{dt_str}.pdf"
-                        cert_path_auto = os.path.join(UPLOADS_DIR, nome_cert_auto)
-                        pdf_bytes_cert = gerar_pdf_certificado(
-                            colab_nome=colab_info['nome'],
-                            colab_cargo=colab_info['cargo'],
-                            curso_nome=nome_curso,
-                            carga_horaria=ch_val,
-                            data_realizacao=dt_str,
-                            aplicador_nome=nome_aplicador,
-                            aplicador_cargo=cargo_aplicador
-                        )
-                        with open(cert_path_auto, "wb") as f:
-                            f.write(pdf_bytes_cert.getvalue())
-                            
-                        if not is_concluido:
-                            c.execute('''
-                                INSERT INTO registros (colaborador_id, treinamento_id, data_realizacao, validade_meses, status_planilha, arquivo_evidencia, arquivo_forms, instrutor_nome, aplicador_cargo, custo_real)
-                                VALUES (?, ?, ?, 12, 'Concluído', ?, ?, ?, ?, 0.0)
-                            ''', (cid, tid, dt_str, nome_cert_auto, nome_forms_salvo, nome_aplicador, cargo_aplicador))
-                        else:
-                            c.execute("UPDATE registros SET data_realizacao=?, arquivo_evidencia=?, arquivo_forms=?, instrutor_nome=?, aplicador_cargo=? WHERE colaborador_id=? AND treinamento_id=? AND strftime('%Y', data_realizacao)=?", (dt_str, nome_cert_auto, nome_forms_salvo, nome_aplicador, cargo_aplicador, cid, tid, str(ano_exercicio)))
-                            
-                        conn.commit()
-                        st.success(f"🎉 Treinamento '{nome_curso}' atualizado e salvo no banco de dados!")
-                        st.rerun()
-                        
-                    elif novo_status == "🔴 Pendente" and is_concluido:
-                        if reg_info['Evidencia']:
-                            p_ev = os.path.join(UPLOADS_DIR, str(reg_info['Evidencia']))
-                            if os.path.exists(p_ev): os.remove(p_ev)
-                        if reg_info['Forms'] and reg_info['Forms'] != "Sem anexo":
-                            p_f = os.path.join(UPLOADS_DIR, str(reg_info['Forms']))
-                            if os.path.exists(p_f): os.remove(p_f)
-                            
-                        c.execute("DELETE FROM registros WHERE colaborador_id=? AND treinamento_id=? AND strftime('%Y', data_realizacao)=?", (cid, tid, str(ano_exercicio)))
-                        conn.commit()
-                        registrar_log(st.session_state["nome_usuario"], "EXCLUSÃO DE REGISTRO", f"Removido treinamento ID {tid} do colaborador ID {cid}")
-                        st.warning(f"🗑️ Registro e Certificado de '{nome_curso}' foram excluídos!")
-                        st.rerun()
-
-            if is_concluido and reg_info is not None:
-                col_dl1, col_dl2 = st.columns(2)
-                with col_dl1:
-                    cert_file = reg_info['Evidencia']
-                    cert_path = os.path.join(UPLOADS_DIR, str(cert_file))
-                    if os.path.exists(cert_path):
-                        with open(cert_path, "rb") as f_c:
-                            st.download_button("🎓 Baixar Certificado", f_c.read(), file_name=str(cert_file), key=f"dl_c_{cid}_{tid}")
-                with col_dl2:
-                    forms_file = reg_info['Forms']
-                    if forms_file and forms_file not in ["Sem anexo", "None", "nan"]:
-                        forms_path = os.path.join(UPLOADS_DIR, str(forms_file))
-                        if os.path.exists(forms_path):
-                            with open(forms_path, "rb") as f_f:
-                                st.download_button("📎 Baixar Forms/Lista", f_f.read(), file_name=str(forms_file), key=f"dl_f_{cid}_{tid}")
-            
-            st.divider()
-
-# -------------------------------------------------------------------
-# 3. LANÇAR TREINAMENTO
-# -------------------------------------------------------------------
-elif pagina == "✍️ Lançar Treinamento":
-    st.markdown('<div class="main-header">✍️ Registro de Treinamento e Emissão Automática de Certificado</div>', unsafe_allow_html=True)
-    df_colab = pd.read_sql_query("SELECT id, nome, cargo, departamento FROM colaboradores ORDER BY nome", conn)
-    df_treino = pd.read_sql_query("SELECT id, nome_curso, carga_horaria, frequencia, custo_estimado, aplicador_padrao, aplicador_cargo_padrao FROM treinamentos ORDER BY nome_curso", conn)
-    
-    if df_colab.empty or df_treino.empty:
-        st.warning("Cadastre colaboradores e treinamentos antes.")
-    else:
-        with st.form("form_registro_evidencia"):
-            c1, c2 = st.columns(2)
-            with c1:
-                colab_dict = {f"{r['nome']} ({r['departamento']})": (r['id'], r['nome'], r['cargo']) for _, r in df_colab.iterrows()}
-                colab_sel = st.selectbox("Selecione o Colaborador", options=list(colab_dict.keys()))
-                dt_realizacao = st.date_input("Data de Aplicação", datetime.date.today())
+        df_realizados = pd.
