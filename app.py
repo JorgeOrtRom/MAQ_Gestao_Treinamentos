@@ -56,10 +56,94 @@ def get_db_connection():
 
 conn = get_db_connection()
 
-# Garante a existência das colunas no banco de dados
+# Cria as tabelas necessárias e adequa o banco de dados
 def adequar_banco_dados():
     c = conn.cursor()
-    # Colunas em registros
+    
+    # 1. Tabela de Usuários
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            login TEXT UNIQUE,
+            senha TEXT,
+            nome TEXT,
+            perfil TEXT
+        )
+    ''')
+    
+    # Insere usuários padrão caso a tabela esteja vazia
+    c.execute("SELECT COUNT(*) FROM usuarios")
+    if c.fetchone()[0] == 0:
+        c.execute("INSERT INTO usuarios (login, senha, nome, perfil) VALUES ('admin', 'admin123', 'Administrador', 'Admin')")
+        c.execute("INSERT INTO usuarios (login, senha, nome, perfil) VALUES ('auditor', 'auditor123', 'Auditor Interno', 'Auditor')")
+        c.execute("INSERT INTO usuarios (login, senha, nome, perfil) VALUES ('gestor', 'gestor123', 'Gestor de Área', 'Gestor')")
+        conn.commit()
+
+    # 2. Tabela de Colaboradores
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS colaboradores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT,
+            departamento TEXT,
+            cargo TEXT,
+            gestor TEXT,
+            genero TEXT,
+            email TEXT
+        )
+    ''')
+
+    # 3. Tabela de Treinamentos (Catálogo)
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS treinamentos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome_curso TEXT,
+            carga_horaria REAL,
+            frequencia TEXT,
+            classificacao TEXT,
+            custo_estimado REAL DEFAULT 0.0,
+            aplicador_padrao TEXT,
+            aplicador_cargo_padrao TEXT
+        )
+    ''')
+
+    # 4. Tabela de Registros de Treinamento
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS registros (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            colaborador_id INTEGER,
+            treinamento_id INTEGER,
+            data_realizacao TEXT,
+            validade_meses INTEGER,
+            status_planilha TEXT,
+            arquivo_evidencia TEXT,
+            arquivo_forms TEXT,
+            instrutor_nome TEXT,
+            aplicador_cargo TEXT,
+            custo_real REAL DEFAULT 0.0
+        )
+    ''')
+
+    # 5. Tabela de Matriz por Cargo (LNT)
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS matriz_cargo_treinamento (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cargo TEXT,
+            treinamento_id INTEGER
+        )
+    ''')
+
+    # 6. Tabela de Logs de Auditoria
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS logs_auditoria (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            usuario TEXT,
+            acao TEXT,
+            detalhes TEXT
+        )
+    ''')
+
+    # Garantia de colunas legadas em bancos preexistentes
     try: c.execute("ALTER TABLE registros ADD COLUMN arquivo_forms TEXT"); conn.commit()
     except sqlite3.OperationalError: pass
     
@@ -69,7 +153,6 @@ def adequar_banco_dados():
     try: c.execute("ALTER TABLE registros ADD COLUMN aplicador_cargo TEXT"); conn.commit()
     except sqlite3.OperationalError: pass
 
-    # Colunas em treinamentos (Catálogo)
     try: c.execute("ALTER TABLE treinamentos ADD COLUMN aplicador_padrao TEXT"); conn.commit()
     except sqlite3.OperationalError: pass
 
@@ -514,7 +597,7 @@ if pagina == "📊 Dashboard Executivo":
             st.plotly_chart(fig_bar, use_container_width=True)
 
 # -------------------------------------------------------------------
-# 2. VISÃO DO COLABORADOR (COM SALVAMENTO CORRIGIDO E FORMS)
+# 2. VISÃO DO COLABORADOR
 # -------------------------------------------------------------------
 elif pagina == "👤 Visão do Colaborador":
     st.markdown(f'<div class="main-header">👤 Prontuário Individual e Matriz de Participação ({ano_exercicio})</div>', unsafe_allow_html=True)
@@ -585,7 +668,7 @@ elif pagina == "👤 Visão do Colaborador":
         kc1, kc2, k3, kc4 = st.columns(4)
         kc1.metric("🎯 Exigidos p/ Cargo", f"{total_mapeados} Cursos")
         kc2.metric("✅ Concluídos no Ano", f"{qtd_realizados} Cursos")
-        k3.metric("⏳ Pendentes no Ano", f"{qtd_pendentes} Cursos")
+        kc3.metric("⏳ Pendentes no Ano", f"{qtd_pendentes} Cursos")
         kc4.metric("⏱ Horas Cumpridas", f"{horas_acumuladas:.1f}h")
         
         st.divider()
@@ -715,350 +798,3 @@ elif pagina == "✍️ Lançar Treinamento":
                 colab_dict = {f"{r['nome']} ({r['departamento']})": (r['id'], r['nome'], r['cargo']) for _, r in df_colab.iterrows()}
                 colab_sel = st.selectbox("Selecione o Colaborador", options=list(colab_dict.keys()))
                 dt_realizacao = st.date_input("Data de Aplicação", datetime.date.today())
-            with c2:
-                treino_dict = {f"{r['nome_curso']} ({r['carga_horaria']}h)": (r['id'], r['frequencia'], r['custo_estimado'], r['nome_curso'], r['carga_horaria'], r['aplicador_padrao'], r['aplicador_cargo_padrao']) for _, r in df_treino.iterrows()}
-                treino_sel = st.selectbox("Selecione o Treinamento", options=list(treino_dict.keys()))
-                validade = st.number_input("Validade da Reciclagem (em meses)", min_value=1, max_value=60, value=12)
-                
-            _, _, _, _, _, ap_padrao_txt, ap_cargo_padrao_txt = treino_dict[treino_sel]
-            
-            c_a1, c_a2 = st.columns(2)
-            with c_a1:
-                aplicador_input_nome = st.text_input("Nome do Aplicador", value=ap_padrao_txt or "Aplicador Técnico")
-            with c_a2:
-                aplicador_input_cargo = st.text_input("Cargo do Aplicador", value=ap_cargo_padrao_txt or "Aplicador do Treinamento")
-                
-            c_v1, c_v2 = st.columns(2)
-            with c_v1:
-                custo_input = st.number_input("Custo da Capacitação (R$)", min_value=0.0, value=float(treino_dict[treino_sel][2] or 0.0))
-            with c_v2:
-                uploaded_file = st.file_uploader("📎 Anexar Evidência Manual (Forms/Lista de Presença)", type=["pdf", "png", "jpg", "jpeg"])
-                
-            if st.form_submit_button("✅ Gravar Registro e Gerar Evidência"):
-                cid, c_nome_txt, c_cargo_txt = colab_dict[colab_sel]
-                tid, t_freq, t_custo, t_nome_txt, t_horas_val, _, _ = treino_dict[treino_sel]
-                
-                nome_cert_auto = f"Certificado_AUTO_{cid}_{tid}_{dt_realizacao}.pdf"
-                caminho_cert_auto = os.path.join(UPLOADS_DIR, nome_cert_auto)
-                pdf_bytes_cert = gerar_pdf_certificado(
-                    colab_nome=c_nome_txt,
-                    colab_cargo=c_cargo_txt,
-                    curso_nome=t_nome_txt,
-                    carga_horaria=t_horas_val,
-                    data_realizacao=dt_realizacao,
-                    aplicador_nome=aplicador_input_nome,
-                    aplicador_cargo=aplicador_input_cargo
-                )
-                with open(caminho_cert_auto, "wb") as f:
-                    f.write(pdf_bytes_cert.getvalue())
-                
-                nome_forms_val = "Sem anexo"
-                if uploaded_file is not None:
-                    nome_forms_val = f"Forms_{cid}_{tid}_{dt_realizacao}_{uploaded_file.name}"
-                    with open(os.path.join(UPLOADS_DIR, nome_forms_val), "wb") as f:
-                        f.write(uploaded_file.getbuffer())
-                
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT INTO registros (colaborador_id, treinamento_id, data_realizacao, validade_meses, status_planilha, arquivo_evidencia, arquivo_forms, instrutor_nome, aplicador_cargo, custo_real)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (cid, tid, dt_realizacao, validade, "Concluído", nome_cert_auto, nome_forms_val, aplicador_input_nome, aplicador_input_cargo, custo_input))
-                conn.commit()
-                registrar_log(st.session_state["nome_usuario"], "LANÇAMENTO DE TREINAMENTO", f"Treino ID {tid} para Colab ID {cid}")
-                st.success(f"🎉 Treinamento gravado e Certificado `{nome_cert_auto}` gerado com sucesso!")
-
-# -------------------------------------------------------------------
-# 4. CATÁLOGO DE TREINAMENTOS (EDITÁVEL E COM APLICADOR PADRÃO)
-# -------------------------------------------------------------------
-elif pagina == "📚 Catálogo de Treinamentos":
-    st.markdown('<div class="main-header">📚 Catálogo de Treinamentos, Normas e Aplicadores Padrão</div>', unsafe_allow_html=True)
-    
-    t_cat_list, t_cat_add, t_cat_edit = st.tabs(["📋 Listagem Completa", "➕ Incluir Novo Treinamento", "✏️ Editar Cadastro / Aplicador Padrão"])
-    
-    with t_cat_list:
-        df_t = pd.read_sql_query("SELECT id AS ID, nome_curso AS Curso, carga_horaria AS 'Carga Horária (h)', frequencia AS Frequência, classificacao AS Classificação, aplicador_padrao AS 'Aplicador Padrão', aplicador_cargo_padrao AS 'Cargo do Aplicador' FROM treinamentos ORDER BY nome_curso", conn)
-        st.dataframe(df_t, use_container_width=True)
-
-    with t_cat_add:
-        with st.form("form_add_treino"):
-            st.subheader("➕ Novo Treinamento no Catálogo")
-            n_curso = st.text_input("Nome do Treinamento / Norma (ex: NR-10 Segurança em Elétrica)")
-            c_t1, c_t2, c_t3 = st.columns(3)
-            with c_t1: n_ch = st.number_input("Carga Horária (horas)", min_value=0.5, value=1.0, step=0.5)
-            with c_t2: n_freq = st.selectbox("Frequência / Validade", ["Anual", "Bienal (2 anos)", "Trienal (3 anos)", "Eventual / Admissional"])
-            with c_t3: n_classif = st.selectbox("Classificação", ["Obrigatório (NR)", "Processo / Qualidade (ISO)", "Integração", "Opcional"])
-            
-            c_a1, c_a2 = st.columns(2)
-            with c_a1: n_ap_nome = st.text_input("Nome do Aplicador Padrão", "Aplicador Técnico")
-            with c_a2: n_ap_cargo = st.text_input("Cargo do Aplicador Padrão", "Aplicador do Treinamento")
-            
-            if st.form_submit_button("➕ Salvar Treinamento"):
-                if n_curso.strip():
-                    c = conn.cursor()
-                    c.execute("INSERT INTO treinamentos (nome_curso, carga_horaria, frequencia, classificacao, aplicador_padrao, aplicador_cargo_padrao) VALUES (?, ?, ?, ?, ?, ?)", (n_curso.strip(), n_ch, n_freq, n_classif, n_ap_nome.strip(), n_ap_cargo.strip()))
-                    conn.commit()
-                    registrar_log(st.session_state["nome_usuario"], "INCLUSÃO TREINAMENTO", f"Incluído curso: {n_curso}")
-                    st.success(f"Treinamento '{n_curso}' adicionado com sucesso!")
-                    st.rerun()
-
-    with t_cat_edit:
-        df_t_edit = pd.read_sql_query("SELECT id, nome_curso, carga_horaria, frequencia, classificacao, aplicador_padrao, aplicador_cargo_padrao FROM treinamentos ORDER BY nome_curso", conn)
-        if not df_t_edit.empty:
-            curso_sel_e = st.selectbox("Selecione o Treinamento para Editar:", df_t_edit['nome_curso'].tolist())
-            row_e = df_t_edit[df_t_edit['nome_curso'] == curso_sel_e].iloc[0]
-            
-            with st.form("form_edit_treino"):
-                st.subheader(f"✏️ Editar: {row_e['nome_curso']}")
-                e_curso = st.text_input("Nome do Treinamento / Norma", value=row_e['nome_curso'])
-                e_c1, e_c2, e_c3 = st.columns(3)
-                with e_c1: e_ch = st.number_input("Carga Horária (horas)", min_value=0.5, value=float(row_e['carga_horaria']), step=0.5)
-                with e_c2: e_freq = st.selectbox("Frequência / Validade", ["Anual", "Bienal (2 anos)", "Trienal (3 anos)", "Eventual / Admissional"], index=0)
-                with e_c3: e_classif = st.selectbox("Classificação", ["Obrigatório (NR)", "Processo / Qualidade (ISO)", "Integração", "Opcional"], index=0)
-                
-                e_a1, e_a2 = st.columns(2)
-                with e_a1: e_ap_nome = st.text_input("Nome do Aplicador Padrão", value=row_e['aplicador_padrao'] or "Aplicador Técnico")
-                with e_a2: e_ap_cargo = st.text_input("Cargo do Aplicador Padrão", value=row_e['aplicador_cargo_padrao'] or "Aplicador do Treinamento")
-                
-                if st.form_submit_button("💾 Salvar Alterações no Catálogo"):
-                    c = conn.cursor()
-                    c.execute("UPDATE treinamentos SET nome_curso=?, carga_horaria=?, frequencia=?, classificacao=?, aplicador_padrao=?, aplicador_cargo_padrao=? WHERE id=?", (e_curso.strip(), e_ch, e_freq, e_classif, e_ap_nome.strip(), e_ap_cargo.strip(), int(row_e['id'])))
-                    conn.commit()
-                    registrar_log(st.session_state["nome_usuario"], "EDIÇÃO TREINAMENTO", f"Atualizado curso ID {row_e['id']}: {e_curso}")
-                    st.success("Cadastro do treinamento atualizado no catálogo!")
-                    st.rerun()
-
-# -------------------------------------------------------------------
-# RESTANTE DAS PÁGINAS SUPORTADAS
-# -------------------------------------------------------------------
-elif pagina == "📜 Certificados & Presença":
-    st.markdown(f'<div class="main-header">📜 Emissão de Certificados e Listas de Presença ({ano_exercicio})</div>', unsafe_allow_html=True)
-    t_cert, t_lista = st.tabs(["📜 Emitir Certificado Individual", "📝 Gerar Lista de Presença para Treinamento"])
-    
-    with t_cert:
-        st.subheader("📜 Gerador de Certificado em PDF com Logo e 3 Assinaturas")
-        df_regs = pd.read_sql_query('''
-            SELECT c.nome AS Colaborador, c.cargo AS Cargo, t.nome_curso AS Treinamento, t.carga_horaria AS Horas, r.data_realizacao AS Data, r.instrutor_nome AS Instrutor, r.aplicador_cargo AS AplicadorCargo
-            FROM registros r
-            JOIN colaboradores c ON r.colaborador_id = c.id
-            JOIN treinamentos t ON r.treinamento_id = t.id
-            WHERE strftime('%Y', r.data_realizacao) = ?
-            ORDER BY c.nome
-        ''', conn, params=(str(ano_exercicio),))
-        
-        if df_regs.empty:
-            st.info(f"Nenhum treinamento registrado em {ano_exercicio} para emissão de certificado.")
-        else:
-            opt_cert = [f"{r['Colaborador']} — {r['Treinamento']} ({r['Data']})" for _, r in df_regs.iterrows()]
-            sel_cert = st.selectbox("Selecione a Capacitação Realizada:", opt_cert)
-            idx_sel = opt_cert.index(sel_cert)
-            row_cert = df_regs.iloc[idx_sel]
-            
-            pdf_cert_bytes = gerar_pdf_certificado(
-                colab_nome=row_cert['Colaborador'],
-                colab_cargo=row_cert['Cargo'],
-                curso_nome=row_cert['Treinamento'],
-                carga_horaria=row_cert['Horas'],
-                data_realizacao=row_cert['Data'],
-                aplicador_nome=row_cert['Instrutor'] or "Aplicador Técnico",
-                aplicador_cargo=row_cert['AplicadorCargo'] or "Aplicador do Treinamento"
-            )
-            st.download_button(
-                label=f"🎓 Baixar Certificado Oficial em PDF ({row_cert['Colaborador']})",
-                data=pdf_cert_bytes,
-                file_name=f"Certificado_{row_cert['Colaborador'].replace(' ', '_')}_{row_cert['Treinamento'][:15]}.pdf",
-                mime="application/pdf",
-                type="primary"
-            )
-
-    with t_lista:
-        st.subheader(f"📝 Gerador de Lista de Presença para Aplicação Presencial ({ano_exercicio})")
-        df_treinos_l = pd.read_sql_query("SELECT id, nome_curso, carga_horaria FROM treinamentos ORDER BY nome_curso", conn)
-        deptos_l = get_lista_departamentos()
-        
-        c_l1, c_l2 = st.columns(2)
-        with c_l1: treino_l_sel = st.selectbox("Selecione o Treinamento:", df_treinos_l['nome_curso'].tolist())
-        with c_l2: depto_l_sel = st.selectbox("Filtrar Colaboradores do Setor:", ["TODOS OS SETORES"] + deptos_l)
-            
-        row_t_info = df_treinos_l[df_treinos_l['nome_curso'] == treino_l_sel].iloc[0]
-        
-        if depto_l_sel == "TODOS OS SETORES":
-            df_colabs_lista = pd.read_sql_query("SELECT nome, cargo FROM colaboradores ORDER BY nome", conn)
-        else:
-            df_colabs_lista = pd.read_sql_query("SELECT nome, cargo FROM colaboradores WHERE departamento=? ORDER BY nome", conn, params=(depto_l_sel,))
-            
-        st.write(f"**Total de participantes na lista:** `{len(df_colabs_lista)}` colaboradores.")
-        if not df_colabs_lista.empty:
-            lista_dict = df_colabs_lista.to_dict('records')
-            pdf_lista_bytes = gerar_pdf_lista_presenca(row_t_info['nome_curso'], row_t_info['carga_horaria'], depto_l_sel, lista_dict, ano_exercicio)
-            st.download_button(
-                label="🖨️ Imprimir Lista de Presença em PDF (Para Assinatura Física)",
-                data=pdf_lista_bytes,
-                file_name=f"Lista_Presenca_{treino_l_sel[:15]}_{ano_exercicio}.pdf",
-                mime="application/pdf"
-            )
-
-elif pagina == "📈 Evolução por Treinamento":
-    st.markdown(f'<div class="main-header">📈 Evolução Geral por Treinamento ({ano_exercicio}): Previstos vs. Realizados</div>', unsafe_allow_html=True)
-    total_colabs = pd.read_sql_query("SELECT COUNT(*) as t FROM colaboradores", conn)['t'].iloc[0]
-    
-    query_evo = '''
-        SELECT 
-            t.nome_curso AS Treinamento, t.carga_horaria AS Horas, t.classificacao AS Classificacao,
-            COUNT(DISTINCT r.colaborador_id) AS Realizados
-        FROM treinamentos t
-        LEFT JOIN registros r ON t.id = r.treinamento_id AND strftime('%Y', r.data_realizacao) = ?
-        GROUP BY t.id ORDER BY Realizados DESC
-    '''
-    df_evo = pd.read_sql_query(query_evo, conn, params=(str(ano_exercicio),))
-    
-    if df_evo.empty:
-        st.info("Nenhum treinamento cadastrado.")
-    else:
-        df_evo['Previstos'] = total_colabs
-        df_evo['Atingimento (%)'] = (df_evo['Realizados'] / df_evo['Previstos'] * 100).round(1)
-        df_evo['Horas Acumuladas'] = df_evo['Realizados'] * df_evo['Horas']
-        
-        filtro_curso = st.text_input("🔍 Buscar Treinamento/Norma:", "")
-        if filtro_curso:
-            df_evo = df_evo[df_evo['Treinamento'].str.contains(filtro_curso, case=False)]
-            
-        fig_comp = px.bar(
-            df_evo, x='Treinamento', y=['Realizados', 'Previstos'], barmode='group',
-            labels={'value': 'Pessoas', 'variable': 'Status'}, color_discrete_map={'Realizados': '#10B981', 'Previstos': '#64748B'}
-        )
-        fig_comp.update_layout(xaxis_tickangle=-45)
-        st.plotly_chart(fig_comp, use_container_width=True)
-        st.divider()
-        st.dataframe(df_evo[['Treinamento', 'Classificacao', 'Horas', 'Previstos', 'Realizados', 'Atingimento (%)', 'Horas Acumuladas']], use_container_width=True)
-
-elif pagina == "👥 Gestão de Colaboradores":
-    st.markdown('<div class="main-header">👥 Gestão de Colaboradores</div>', unsafe_allow_html=True)
-    t_list, t_add, t_edit, t_del = st.tabs(["📋 Listagem", "➕ Incluir Novo", "✏️ Editar Cadastro", "❌ Excluir Colaborador"])
-    deptos_existentes = get_lista_departamentos()
-    
-    with t_list:
-        df_c = pd.read_sql_query("SELECT id AS ID, nome AS Nome, cargo AS Cargo, gestor AS Gestor, departamento AS 'Setor', genero AS Gênero, email AS 'E-mail' FROM colaboradores ORDER BY nome", conn)
-        st.dataframe(df_c, use_container_width=True)
-        
-    with t_add:
-        with st.form("form_add_colab"):
-            st.subheader("➕ Novo Colaborador")
-            n_nome = st.text_input("Nome Completo")
-            n_cargo = st.text_input("Cargo / Função")
-            n_gestor = st.text_input("Gestor Direto")
-            n_email = st.text_input("E-mail Corporativo")
-            c_s1, c_s2 = st.columns(2)
-            with c_s1: depto_sel_list = st.selectbox("Selecionar Setor Existente:", options=["-- Selecionar ou Criar Novo --"] + deptos_existentes)
-            with c_s2: depto_novo_text = st.text_input("OU Digite um Novo Setor / Departamento:")
-            n_genero = st.selectbox("Gênero", ["Masculino", "Feminino"])
-            
-            if st.form_submit_button("➕ Salvar Novo Colaborador"):
-                setor_final = depto_novo_text.strip().upper() if depto_novo_text.strip() else (depto_sel_list if depto_sel_list != "-- Selecionar ou Criar Novo --" else "")
-                if n_nome.strip() and setor_final:
-                    try:
-                        cursor = conn.cursor()
-                        cursor.execute("INSERT INTO colaboradores (nome, departamento, cargo, gestor, genero, email) VALUES (?, ?, ?, ?, ?, ?)", (n_nome, setor_final, n_cargo, n_gestor, n_genero, n_email))
-                        conn.commit()
-                        registrar_log(st.session_state["nome_usuario"], "INCLUSÃO COLABORADOR", f"Incluído: {n_nome} ({setor_final})")
-                        st.success(f"Colaborador '{n_nome}' incluído no setor '{setor_final}' com sucesso!")
-                        st.rerun()
-                    except Exception as e: st.error(f"Erro: {e}")
-
-    with t_edit:
-        df_c_edit = pd.read_sql_query("SELECT id, nome, departamento, cargo, gestor, genero, email FROM colaboradores ORDER BY nome", conn)
-        if not df_c_edit.empty:
-            colab_sel_edit = st.selectbox("Selecione o Colaborador para Editar:", df_c_edit['nome'].tolist())
-            row_edit = df_c_edit[df_c_edit['nome'] == colab_sel_edit].iloc[0]
-            with st.form("form_edit_colab"):
-                st.subheader(f"✏️ Editar Cadastro: {row_edit['nome']}")
-                e_nome = st.text_input("Nome Completo", value=row_edit['nome'])
-                e_cargo = st.text_input("Cargo / Função", value=row_edit['cargo'] or "")
-                e_gestor = st.text_input("Gestor Direto", value=row_edit['gestor'] or "")
-                e_email = st.text_input("E-mail Corporativo", value=row_edit['email'] or "")
-                e_s1, e_s2 = st.columns(2)
-                setor_atual = row_edit['departamento']
-                list_options = deptos_existentes if setor_atual in deptos_existentes else [setor_atual] + deptos_existentes
-                idx_atual = list_options.index(setor_atual) if setor_atual in list_options else 0
-                with e_s1: e_depto_sel = st.selectbox("Selecionar da Lista Existente:", options=list_options, index=idx_atual)
-                with e_s2: e_depto_novo = st.text_input("OU Digite para Alterar o Setor:")
-                e_genero = st.selectbox("Gênero", ["Masculino", "Feminino"], index=0 if row_edit['genero'] == "Masculino" else 1)
-                if st.form_submit_button("💾 Salvar Alterações"):
-                    e_setor_final = e_depto_novo.strip().upper() if e_depto_novo.strip() else e_depto_sel
-                    cursor = conn.cursor()
-                    cursor.execute("UPDATE colaboradores SET nome=?, departamento=?, cargo=?, gestor=?, genero=?, email=? WHERE id=?", (e_nome, e_setor_final, e_cargo, e_gestor, e_genero, e_email, int(row_edit['id'])))
-                    conn.commit()
-                    registrar_log(st.session_state["nome_usuario"], "EDIÇÃO COLABORADOR", f"Editado ID {row_edit['id']}: '{e_nome}'")
-                    st.success("Cadastro atualizado com sucesso!")
-                    st.rerun()
-
-    with t_del:
-        df_c_del = pd.read_sql_query("SELECT id, nome, departamento FROM colaboradores ORDER BY nome", conn)
-        if not df_c_del.empty:
-            colab_sel_del = st.selectbox("Selecione o Colaborador para Excluir:", df_c_del['nome'].tolist())
-            row_del = df_c_del[df_c_del['nome'] == colab_sel_del].iloc[0]
-            st.warning(f"⚠️ Atenção: A exclusão do colaborador **{row_del['nome']}** apagará todo o seu histórico.")
-            if st.button("🗑️ Confirmar Exclusão Permanente", type="primary"):
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM colaboradores WHERE id=?", (int(row_del['id']),))
-                cursor.execute("DELETE FROM registros WHERE colaborador_id=?", (int(row_del['id']),))
-                conn.commit()
-                registrar_log(st.session_state["nome_usuario"], "EXCLUSÃO COLABORADOR", f"Excluído colaborador ID {row_del['id']}: {row_del['nome']}")
-                st.success("Colaborador removido com sucesso!")
-                st.rerun()
-
-elif pagina == "🎯 Matriz por Cargo (LNT)":
-    st.markdown('<div class="main-header">🎯 Matriz de Treinamentos Obrigatórios por Cargo (LNT)</div>', unsafe_allow_html=True)
-    df_cargos = pd.read_sql_query("SELECT DISTINCT cargo FROM colaboradores WHERE cargo IS NOT NULL AND cargo != ''", conn)
-    cargos_lista = sorted(df_cargos['cargo'].tolist())
-    if cargos_lista:
-        cargo_sel = st.selectbox("Selecione o Cargo para Configurar:", cargos_lista)
-        df_treinos_todos = pd.read_sql_query("SELECT id, nome_curso, classificacao FROM treinamentos ORDER BY nome_curso", conn)
-        c = conn.cursor()
-        c.execute("SELECT treinamento_id FROM matriz_cargo_treinamento WHERE cargo=?", (cargo_sel,))
-        atuais_ids = [r[0] for r in c.fetchall()]
-        with st.form("form_matriz_lnt"):
-            st.write(f"**Selecione os treinamentos OBRIGATÓRIOS para a função `{cargo_sel}`:**")
-            novos_selecionados = []
-            for _, r_t in df_treinos_todos.iterrows():
-                marcado = r_t['id'] in atuais_ids
-                if st.checkbox(f"{r_t['nome_curso']} ({r_t['classificacao']})", value=marcado, key=f"chk_{r_t['id']}"):
-                    novos_selecionados.append(r_t['id'])
-            if st.form_submit_button("💾 Salvar Matriz do Cargo"):
-                c.execute("DELETE FROM matriz_cargo_treinamento WHERE cargo=?", (cargo_sel,))
-                for tid in novos_selecionados:
-                    c.execute("INSERT INTO matriz_cargo_treinamento (cargo, treinamento_id) VALUES (?, ?)", (cargo_sel, tid))
-                conn.commit()
-                registrar_log(st.session_state["nome_usuario"], "ATUALIZAÇÃO LNT", f"Atualizada matriz para o cargo {cargo_sel}")
-                st.success(f"Matriz LNT para `{cargo_sel}` salva com sucesso!")
-
-elif pagina == "🔑 Gestão de Usuários":
-    st.markdown('<div class="main-header">🔑 Gestão de Usuários e Perfis</div>', unsafe_allow_html=True)
-    df_users = pd.read_sql_query("SELECT id AS ID, login AS Login, nome AS Nome, perfil AS 'Perfil de Acesso' FROM usuarios ORDER BY login", conn)
-    st.dataframe(df_users, use_container_width=True)
-
-elif pagina == "💰 Gestão Orçamentária":
-    st.markdown(f'<div class="main-header">💰 Gestão Financeira de Capacitação ({ano_exercicio})</div>', unsafe_allow_html=True)
-    query_custo = "SELECT c.departamento AS Departamento, t.nome_curso AS Treinamento, r.custo_real AS CustoReal FROM registros r JOIN colaboradores c ON r.colaborador_id = c.id JOIN treinamentos t ON r.treinamento_id = t.id WHERE strftime('%Y', r.data_realizacao) = ?"
-    df_cost = pd.read_sql_query(query_custo, conn, params=(str(ano_exercicio),))
-    if not df_cost.empty:
-        st.metric("💰 Investimento Total Cumprido no Ano", f"R$ {df_cost['CustoReal'].sum():,.2f}")
-        st.dataframe(df_cost, use_container_width=True)
-    else:
-        st.info(f"Nenhum custo registrado para {ano_exercicio}.")
-
-elif pagina == "📂 Relatórios p/ Auditoria":
-    st.markdown(f'<div class="main-header">📂 Exportação Oficial de Relatórios ({ano_exercicio})</div>', unsafe_allow_html=True)
-    query = "SELECT c.nome AS 'Nome Colaborador', c.cargo AS 'Cargo', c.departamento AS 'Departamento', t.nome_curso AS 'Treinamento', t.carga_horaria AS 'Horas', r.data_realizacao AS 'Data Realização', r.arquivo_evidencia AS 'Evidência' FROM registros r JOIN colaboradores c ON r.colaborador_id = c.id JOIN treinamentos t ON r.treinamento_id = t.id WHERE strftime('%Y', r.data_realizacao) = ?"
-    df_report = pd.read_sql_query(query, conn, params=(str(ano_exercicio),))
-    if not df_report.empty:
-        st.dataframe(df_report, use_container_width=True)
-        st.download_button("📥 Baixar Relatório (CSV)", df_report.to_csv(index=False).encode('utf-8'), f"Relatorio_MAQ_{ano_exercicio}.csv", "text/csv")
-    else:
-        st.info(f"Nenhum relatório encontrado para o ano de {ano_exercicio}.")
-
-elif pagina == "📜 Logs de Auditoria":
-    st.markdown('<div class="main-header">📜 Trilha de Auditoria (Audit Trail)</div>', unsafe_allow_html=True)
-    df_logs = pd.read_sql_query("SELECT timestamp AS 'Data/Hora', usuario AS 'Operador', acao AS 'Ação', detalhes AS 'Detalhes Operacionais' FROM logs_auditoria ORDER BY id DESC", conn)
-    st.dataframe(df_logs, use_container_width=True)
-
-conn.close()
