@@ -6,7 +6,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell 
 } from 'recharts';
 import { 
-  Users, Award, BookOpen, CheckCircle, AlertTriangle, FileText, Upload, Save, Plus, Search, Printer, Layers, ExternalLink, Trash2, LogOut, Lock, Mail
+  Users, Award, BookOpen, CheckCircle, AlertTriangle, FileText, Upload, Save, Plus, Search, Printer, Layers, ExternalLink, Trash2, LogOut, Lock, Mail, UserPlus, Shield
 } from 'lucide-react';
 
 const SUPABASE_URL = 'https://qpmgzztaduetfrjcvswo.supabase.co';
@@ -15,8 +15,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export default function EnterpriseDashboard() {
   const [session, setSession] = useState<any>(null);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  // Login predefinido padrão
+  const [email, setEmail] = useState('admin@attendambiental.com.br');
+  const [password, setPassword] = useState('admin123');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
 
@@ -29,13 +30,16 @@ export default function EnterpriseDashboard() {
   const [loading, setLoading] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
 
-  // Formulários
+  // Formulários de cadastro
   const [novoColab, setNovoColab] = useState({ nome: '', cargo: '', departamento: '', gestor: '' });
   const [novoTreino, setNovoTreino] = useState({ nome_curso: '', carga_horaria: 1, frequencia: 'ANUAL', classificacao: 'Exigência da função', aplicador_padrao: '' });
   const [novaMatriz, setNovaMatriz] = useState({ cargo: '', treinamento_id: '' });
+  
+  // Formulário de gestão de utilizadores
+  const [novoUsuario, setNovoUsuario] = useState({ email: '', password: '' });
+  const [userSuccess, setUserSuccess] = useState('');
 
   useEffect(() => {
-    // Checa sessão ativa do Supabase
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) fetchInitialData();
@@ -71,6 +75,24 @@ export default function EnterpriseDashboard() {
     setSession(null);
   }
 
+  async function handleCreateUser(e: React.FormEvent) {
+    e.preventDefault();
+    setUserSuccess('');
+    if (!novoUsuario.email || !novoUsuario.password) return alert('Preencha e-mail e senha!');
+
+    const { data, error } = await supabase.auth.signUp({
+      email: novoUsuario.email,
+      password: novoUsuario.password,
+    });
+
+    if (error) {
+      alert('Erro ao criar utilizador: ' + error.message);
+    } else {
+      setUserSuccess(`Utilizador ${novoUsuario.email} criado com sucesso!`);
+      setNovoUsuario({ email: '', password: '' });
+    }
+  }
+
   async function fetchInitialData() {
     setLoading(true);
     const { data: colabs } = await supabase.from('colaboradores').select('*').order('nome');
@@ -86,7 +108,7 @@ export default function EnterpriseDashboard() {
     setLoading(false);
   }
 
-  // Métricas do Dashboard
+  // Métricas
   const totalHoras = registros.reduce((acc, r) => acc + (Number(r.treinamentos?.carga_horaria) || 0), 0);
   const totalConcluidos = registros.filter(r => r.status === 'Concluído' || r.status === '🟢 Concluído').length;
   const statusData = [
@@ -95,7 +117,6 @@ export default function EnterpriseDashboard() {
   ];
   const COLORS = ['#10B981', '#EF4444'];
 
-  // Ações no Supabase
   async function handleAddColaborador(e: React.FormEvent) {
     e.preventDefault();
     if (!novoColab.nome || !novoColab.cargo) return alert('Preencha os campos obrigatórios!');
@@ -171,20 +192,20 @@ export default function EnterpriseDashboard() {
     await fetchInitialData();
   }
 
-  // TELA DE LOGIN (Se não houver sessão ativa)
+  // TELA DE LOGIN
   if (!session) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-900 font-sans p-4">
         <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full border border-slate-200">
-          <div className="text-center mb-8">
+          <div className="text-center mb-6">
             <img 
               src="/Logo_Attend_ Ambiental.png" 
               alt="Logo Attend Ambiental" 
-              className="h-20 mx-auto mb-4 object-contain"
+              className="h-16 mx-auto mb-3 object-contain"
               onError={(e: any) => { e.target.style.display = 'none'; }}
             />
             <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">MAQ GESTÃO</h1>
-            <p className="text-slate-500 text-sm mt-1">Plataforma Enterprise de Treinamentos</p>
+            <p className="text-slate-500 text-sm mt-1">Acesso ao Sistema de Treinamentos</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
@@ -202,7 +223,6 @@ export default function EnterpriseDashboard() {
                   type="email" 
                   value={email} 
                   onChange={e => setEmail(e.target.value)}
-                  placeholder="usuario@attendambiental.com.br"
                   className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
                   required 
                 />
@@ -210,14 +230,13 @@ export default function EnterpriseDashboard() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Senha</label>
+              <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Senha de Acesso</label>
               <div className="relative">
                 <Lock className="w-5 h-5 absolute left-3 top-2.5 text-slate-400" />
                 <input 
                   type="password" 
                   value={password} 
                   onChange={e => setPassword(e.target.value)}
-                  placeholder="••••••••"
                   className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
                   required 
                 />
@@ -229,7 +248,7 @@ export default function EnterpriseDashboard() {
               disabled={authLoading}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold text-sm shadow-md transition duration-150 flex items-center justify-center gap-2"
             >
-              {authLoading ? 'Acessando...' : 'Entrar no Sistema'}
+              {authLoading ? 'Autenticando...' : 'Entrar no Sistema'}
             </button>
           </form>
         </div>
@@ -256,7 +275,6 @@ export default function EnterpriseDashboard() {
 
   const currentColabData = colaboradores.find(c => c.id === selectedColab);
   const colabRegistros = registros.filter(r => r.colaborador_id === selectedColab);
-  
   const requisitosCargo = matrizLnt.filter(m => m.cargo === currentColabData?.cargo);
   const cargosExistentes = Array.from(new Set(colaboradores.map(c => c.cargo).filter(Boolean)));
 
@@ -286,7 +304,7 @@ export default function EnterpriseDashboard() {
               onClick={() => setActiveTab('colaborador')} 
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition ${activeTab === 'colaborador' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800 text-slate-400'}`}
             >
-              <Users className="w-5 h-5" /> Lançamentos por Colaborador
+              <Users className="w-5 h-5" /> Lançamentos
             </button>
             <button 
               onClick={() => setActiveTab('matriz_lnt')} 
@@ -305,6 +323,12 @@ export default function EnterpriseDashboard() {
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition ${activeTab === 'catalogo' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800 text-slate-400'}`}
             >
               <BookOpen className="w-5 h-5" /> Catálogo Treinamentos
+            </button>
+            <button 
+              onClick={() => setActiveTab('gestao_usuarios')} 
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition ${activeTab === 'gestao_usuarios' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800 text-slate-400'}`}
+            >
+              <UserPlus className="w-5 h-5" /> Gestão de Utilizadores
             </button>
           </nav>
         </div>
@@ -655,6 +679,52 @@ export default function EnterpriseDashboard() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {/* 6. GESTÃO DE UTILIZADORES DO SISTEMA */}
+        {activeTab === 'gestao_usuarios' && (
+          <div className="space-y-6">
+            <header className="border-b pb-4">
+              <h2 className="text-2xl font-bold text-slate-900">Gestão de Utilizadores e Acessos</h2>
+              <p className="text-slate-500 text-sm">Crie novas contas de acesso para outros administradores ou técnicos</p>
+            </header>
+
+            <form onSubmit={handleCreateUser} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm max-w-md space-y-4">
+              {userSuccess && (
+                <div className="bg-emerald-50 text-emerald-700 p-3 rounded-lg text-xs font-semibold border border-emerald-200">
+                  {userSuccess}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Novo E-mail</label>
+                <input 
+                  type="email" 
+                  value={novoUsuario.email} 
+                  onChange={e => setNovoUsuario({...novoUsuario, email: e.target.value})} 
+                  placeholder="novo_usuario@attendambiental.com.br"
+                  className="w-full p-2 border rounded-lg text-sm bg-slate-50" 
+                  required 
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Senha Provisória</label>
+                <input 
+                  type="password" 
+                  value={novoUsuario.password} 
+                  onChange={e => setNovoUsuario({...novoUsuario, password: e.target.value})} 
+                  placeholder="••••••••"
+                  className="w-full p-2 border rounded-lg text-sm bg-slate-50" 
+                  required 
+                />
+              </div>
+
+              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-semibold text-sm flex items-center justify-center gap-2">
+                <UserPlus className="w-4 h-4" /> Criar Novo Acesso
+              </button>
+            </form>
           </div>
         )}
 
