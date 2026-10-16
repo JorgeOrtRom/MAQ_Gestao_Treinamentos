@@ -6,7 +6,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell 
 } from 'recharts';
 import { 
-  Users, Award, BookOpen, CheckCircle, AlertTriangle, FileText, Upload, Save, Plus, Search, Printer, Layers, ExternalLink, Trash2, Filter
+  Users, Award, BookOpen, CheckCircle, AlertTriangle, FileText, Upload, Save, Plus, Search, Printer, Layers, ExternalLink, Trash2, LogOut, Lock, Mail
 } from 'lucide-react';
 
 const SUPABASE_URL = 'https://qpmgzztaduetfrjcvswo.supabase.co';
@@ -14,6 +14,12 @@ const SUPABASE_ANON_KEY = 'sb_publishable_tGyuT8NnOb67vrbcC8dTFA_wYrn2hkP';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export default function EnterpriseDashboard() {
+  const [session, setSession] = useState<any>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
+
   const [activeTab, setActiveTab] = useState('dashboard');
   const [colaboradores, setColaboradores] = useState<any[]>([]);
   const [treinamentos, setTreinamentos] = useState<any[]>([]);
@@ -23,14 +29,47 @@ export default function EnterpriseDashboard() {
   const [loading, setLoading] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
 
-  // Formulários de cadastro
+  // Formulários
   const [novoColab, setNovoColab] = useState({ nome: '', cargo: '', departamento: '', gestor: '' });
   const [novoTreino, setNovoTreino] = useState({ nome_curso: '', carga_horaria: 1, frequencia: 'ANUAL', classificacao: 'Exigência da função', aplicador_padrao: '' });
   const [novaMatriz, setNovaMatriz] = useState({ cargo: '', treinamento_id: '' });
 
   useEffect(() => {
-    fetchInitialData();
+    // Checa sessão ativa do Supabase
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) fetchInitialData();
+      else setLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) fetchInitialData();
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
+
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setAuthLoading(true);
+    setAuthError('');
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      setAuthError('Falha na autenticação: ' + error.message);
+    }
+    setAuthLoading(false);
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    setSession(null);
+  }
 
   async function fetchInitialData() {
     setLoading(true);
@@ -132,6 +171,72 @@ export default function EnterpriseDashboard() {
     await fetchInitialData();
   }
 
+  // TELA DE LOGIN (Se não houver sessão ativa)
+  if (!session) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-900 font-sans p-4">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full border border-slate-200">
+          <div className="text-center mb-8">
+            <img 
+              src="/Logo_Attend_ Ambiental.png" 
+              alt="Logo Attend Ambiental" 
+              className="h-20 mx-auto mb-4 object-contain"
+              onError={(e: any) => { e.target.style.display = 'none'; }}
+            />
+            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">MAQ GESTÃO</h1>
+            <p className="text-slate-500 text-sm mt-1">Plataforma Enterprise de Treinamentos</p>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            {authError && (
+              <div className="bg-red-50 text-red-600 p-3 rounded-lg text-xs font-medium border border-red-200">
+                {authError}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">E-mail Corporativo</label>
+              <div className="relative">
+                <Mail className="w-5 h-5 absolute left-3 top-2.5 text-slate-400" />
+                <input 
+                  type="email" 
+                  value={email} 
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="usuario@attendambiental.com.br"
+                  className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
+                  required 
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Senha</label>
+              <div className="relative">
+                <Lock className="w-5 h-5 absolute left-3 top-2.5 text-slate-400" />
+                <input 
+                  type="password" 
+                  value={password} 
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
+                  required 
+                />
+              </div>
+            </div>
+
+            <button 
+              type="submit" 
+              disabled={authLoading}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold text-sm shadow-md transition duration-150 flex items-center justify-center gap-2"
+            >
+              {authLoading ? 'Acessando...' : 'Entrar no Sistema'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-900 text-white font-sans">
@@ -152,7 +257,6 @@ export default function EnterpriseDashboard() {
   const currentColabData = colaboradores.find(c => c.id === selectedColab);
   const colabRegistros = registros.filter(r => r.colaborador_id === selectedColab);
   
-  // Requisitos obrigatórios do cargo do colaborador selecionado
   const requisitosCargo = matrizLnt.filter(m => m.cargo === currentColabData?.cargo);
   const cargosExistentes = Array.from(new Set(colaboradores.map(c => c.cargo).filter(Boolean)));
 
@@ -162,7 +266,12 @@ export default function EnterpriseDashboard() {
       <aside className="w-64 bg-slate-900 text-white p-6 flex flex-col justify-between shadow-xl">
         <div>
           <div className="flex items-center gap-3 mb-8">
-            <Award className="w-8 h-8 text-blue-500" />
+            <img 
+              src="/Logo_Attend_ Ambiental.png" 
+              alt="Logo" 
+              className="h-8 w-auto object-contain"
+              onError={(e: any) => { e.target.style.display = 'none'; }}
+            />
             <h1 className="text-xl font-bold tracking-wider">MAQ GESTÃO</h1>
           </div>
 
@@ -200,9 +309,14 @@ export default function EnterpriseDashboard() {
           </nav>
         </div>
 
-        <button onClick={() => window.print()} className="flex items-center gap-2 text-slate-400 hover:text-white transition">
-          <Printer className="w-5 h-5" /> Imprimir Relatório
-        </button>
+        <div className="space-y-3">
+          <button onClick={() => window.print()} className="w-full flex items-center gap-2 text-slate-400 hover:text-white text-sm transition">
+            <Printer className="w-4 h-4" /> Imprimir Relatório
+          </button>
+          <button onClick={handleLogout} className="w-full flex items-center gap-2 text-red-400 hover:text-red-300 text-sm transition">
+            <LogOut className="w-4 h-4" /> Sair da Conta
+          </button>
+        </div>
       </aside>
 
       {/* Conteúdo Central */}
@@ -317,7 +431,6 @@ export default function EnterpriseDashboard() {
               </div>
             )}
 
-            {/* Aviso de Requisitos Obrigatórios do Cargo (LNT) */}
             {requisitosCargo.length > 0 && (
               <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl text-amber-800 text-sm flex items-center gap-3">
                 <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
