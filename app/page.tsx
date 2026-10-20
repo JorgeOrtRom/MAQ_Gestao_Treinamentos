@@ -15,7 +15,6 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export default function EnterpriseDashboard() {
   const [session, setSession] = useState<any>(null);
-  // Login predefinido padrão
   const [email, setEmail] = useState('admin@attendambiental.com.br');
   const [password, setPassword] = useState('admin123');
   const [authLoading, setAuthLoading] = useState(false);
@@ -110,7 +109,7 @@ export default function EnterpriseDashboard() {
 
   // Métricas
   const totalHoras = registros.reduce((acc, r) => acc + (Number(r.treinamentos?.carga_horaria) || 0), 0);
-  const totalConcluidos = registros.filter(r => r.status === 'Concluído' || r.status === '🟢 Concluído').length;
+  const totalConcluidos = registros.length;
   const statusData = [
     { name: '🟢 Concluídos', value: totalConcluidos },
     { name: '🔴 Pendentes LNT', value: Math.max(0, matrizLnt.length - totalConcluidos) }
@@ -162,7 +161,14 @@ export default function EnterpriseDashboard() {
     fetchInitialData();
   }
 
-  async function handleSalvarRegistro(treinamentoId: string, status: string, dataAplicacao: string, aplicador: string, cargoAplicador: string, arquivoFile: File | null) {
+  async function handleSalvarRegistro(
+    treinamentoId: string, 
+    status: string, 
+    dataAplicacao: string, 
+    aplicador: string, 
+    cargoAplicador: string, 
+    arquivoFile: File | null
+  ) {
     let urlForms = '';
 
     if (arquivoFile) {
@@ -173,22 +179,60 @@ export default function EnterpriseDashboard() {
       }
     }
 
-    if (status === '🟢 Concluído' || status === 'Concluído') {
-      await supabase.from('registros').upsert({
+    if (status.includes('Concluido') || status.includes('Concluído')) {
+      const payload: any = {
         colaborador_id: selectedColab,
         treinamento_id: treinamentoId,
         data_realizacao: dataAplicacao,
         instrutor_nome: aplicador,
-        aplicador_cargo: cargoAplicador,
-        status: 'Concluído',
-        url_forms: urlForms || undefined
-      });
+        aplicador_cargo: cargoAplicador
+      };
+
+      if (urlForms) {
+        payload.url_forms = urlForms;
+      }
+
+      const { data: regExistente } = await supabase
+        .from('registros')
+        .select('id')
+        .eq('colaborador_id', selectedColab)
+        .eq('treinamento_id', treinamentoId)
+        .maybeSingle();
+
+      let error = null;
+      if (regExistente) {
+        const res = await supabase
+          .from('registros')
+          .update(payload)
+          .eq('id', regExistente.id);
+        error = res.error;
+      } else {
+        const res = await supabase
+          .from('registros')
+          .insert([payload]);
+        error = res.error;
+      }
+
+      if (error) {
+        alert('Erro ao salvar no banco de dados: ' + error.message);
+      } else {
+        alert('Status atualizado para Concluído com sucesso!');
+      }
     } else {
-      await supabase.from('registros').delete()
+      const { error } = await supabase
+        .from('registros')
+        .delete()
         .eq('colaborador_id', selectedColab)
         .eq('treinamento_id', treinamentoId);
+
+      if (error) {
+        alert('Erro ao atualizar status: ' + error.message);
+      } else {
+        alert('Status atualizado para Pendente com sucesso!');
+      }
     }
 
+    // Recarrega todos os dados do banco para atualizar instantaneamente o visual
     await fetchInitialData();
   }
 
@@ -468,7 +512,7 @@ export default function EnterpriseDashboard() {
             <div className="space-y-4 mt-6">
               {treinamentos.map(treino => {
                 const reg = colabRegistros.find(r => r.treinamento_id === treino.id);
-                const isConcluido = reg?.status === 'Concluído' || reg?.status === '🟢 Concluído';
+                const isConcluido = !!reg;
                 const isObrigatorioCargo = requisitosCargo.some(r => r.treinamento_id === treino.id);
 
                 return (
@@ -477,13 +521,13 @@ export default function EnterpriseDashboard() {
                       <div className="flex items-center gap-2">
                         <h4 className="font-bold text-slate-900 text-lg">{treino.nome_curso}</h4>
                         {isObrigatorioCargo && (
-                          <span className="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded font-semibold">LNT Obrigatória</span>
+                          <span className="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded font-semibold">LNT Obrigatoria</span>
                         )}
                       </div>
                       <p className="text-slate-500 text-sm">{treino.carga_horaria}h — {treino.classificacao}</p>
                       {reg?.url_forms && (
                         <a href={reg.url_forms} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-2 font-medium">
-                          <ExternalLink className="w-3 h-3" /> Ver Evidência Anexada
+                          <ExternalLink className="w-3 h-3" /> Ver Evidencia Anexada
                         </a>
                       )}
                     </div>
@@ -500,9 +544,9 @@ export default function EnterpriseDashboard() {
                       }}
                       className="flex-1 flex items-center gap-3"
                     >
-                      <select name="status" defaultValue={isConcluido ? '🟢 Concluído' : '🔴 Pendente'} className="px-3 py-2 border rounded-lg text-sm bg-slate-50">
+                      <select name="status" key={reg ? 'concluido' : 'pendente'} defaultValue={isConcluido ? '🟢 Concluido' : '🔴 Pendente'} className="px-3 py-2 border rounded-lg text-sm bg-slate-50">
                         <option value="🔴 Pendente">🔴 Pendente</option>
-                        <option value="🟢 Concluído">🟢 Concluído</option>
+                        <option value="🟢 Concluido">🟢 Concluido</option>
                       </select>
 
                       <input type="date" name="data" defaultValue={reg?.data_realizacao || new Date().toISOString().split('T')[0]} className="px-3 py-2 border rounded-lg text-sm bg-slate-50" />
@@ -526,7 +570,7 @@ export default function EnterpriseDashboard() {
           <div className="space-y-6">
             <header className="border-b pb-4">
               <h2 className="text-2xl font-bold text-slate-900">Matriz LNT (Levantamento de Necessidades de Treinamento)</h2>
-              <p className="text-slate-500 text-sm">Associe treinamentos e normas obrigatórias aos cargos existentes</p>
+              <p className="text-slate-500 text-sm">Associe treinamentos e normas obrigatorias aos cargos existentes</p>
             </header>
 
             <form onSubmit={handleAddMatriz} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex gap-4 items-end max-w-3xl">
@@ -569,9 +613,9 @@ export default function EnterpriseDashboard() {
               <table className="w-full text-left border-collapse">
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 text-xs uppercase font-semibold">
                   <tr>
-                    <th className="p-4">Cargo / Função</th>
+                    <th className="p-4">Cargo / Funcao</th>
                     <th className="p-4">Treinamento Requerido</th>
-                    <th className="p-4 text-right">Ação</th>
+                    <th className="p-4 text-right">Acao</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
@@ -597,7 +641,7 @@ export default function EnterpriseDashboard() {
           <div className="space-y-6">
             <header className="border-b pb-4">
               <h2 className="text-2xl font-bold text-slate-900">Novo Colaborador</h2>
-              <p className="text-slate-500 text-sm">Adicionar funcionários à base corporativa do Supabase</p>
+              <p className="text-slate-500 text-sm">Adicionar funcionarios a base corporativa do Supabase</p>
             </header>
 
             <form onSubmit={handleAddColaborador} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm max-w-2xl space-y-4">
@@ -631,7 +675,7 @@ export default function EnterpriseDashboard() {
         {activeTab === 'catalogo' && (
           <div className="space-y-6">
             <header className="border-b pb-4">
-              <h2 className="text-2xl font-bold text-slate-900">Catálogo Geral de Treinamentos</h2>
+              <h2 className="text-2xl font-bold text-slate-900">Catalogo Geral de Treinamentos</h2>
               <p className="text-slate-500 text-sm">Cursos, procedimentos operacionais (PO/IT) e normas regulamentadoras</p>
             </header>
 
@@ -641,15 +685,15 @@ export default function EnterpriseDashboard() {
                 <input type="text" value={novoTreino.nome_curso} onChange={e => setNovoTreino({...novoTreino, nome_curso: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-slate-50" required />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Carga Horária (h)</label>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Carga Horaria (h)</label>
                 <input type="number" step="0.5" value={novoTreino.carga_horaria} onChange={e => setNovoTreino({...novoTreino, carga_horaria: parseFloat(e.target.value)})} className="w-full p-2 border rounded-lg text-sm bg-slate-50" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Frequência</label>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Frequencia</label>
                 <input type="text" value={novoTreino.frequencia} onChange={e => setNovoTreino({...novoTreino, frequencia: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-slate-50" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Classificação</label>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Classificacao</label>
                 <input type="text" value={novoTreino.classificacao} onChange={e => setNovoTreino({...novoTreino, classificacao: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-slate-50" />
               </div>
               <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold text-sm flex items-center justify-center gap-2">
@@ -662,9 +706,9 @@ export default function EnterpriseDashboard() {
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 text-xs uppercase font-semibold">
                   <tr>
                     <th className="p-4">Treinamento / Norma</th>
-                    <th className="p-4">Carga Horária</th>
-                    <th className="p-4">Frequência</th>
-                    <th className="p-4">Classificação</th>
+                    <th className="p-4">Carga Horaria</th>
+                    <th className="p-4">Frequencia</th>
+                    <th className="p-4">Classificacao</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
@@ -686,8 +730,8 @@ export default function EnterpriseDashboard() {
         {activeTab === 'gestao_usuarios' && (
           <div className="space-y-6">
             <header className="border-b pb-4">
-              <h2 className="text-2xl font-bold text-slate-900">Gestão de Utilizadores e Acessos</h2>
-              <p className="text-slate-500 text-sm">Crie novas contas de acesso para outros administradores ou técnicos</p>
+              <h2 className="text-2xl font-bold text-slate-900">Gestao de Utilizadores e Acessos</h2>
+              <p className="text-slate-500 text-sm">Crie novas contas de acesso para outros administradores ou tecnicos</p>
             </header>
 
             <form onSubmit={handleCreateUser} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm max-w-md space-y-4">
@@ -710,7 +754,7 @@ export default function EnterpriseDashboard() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Senha Provisória</label>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Senha Provisoria</label>
                 <input 
                   type="password" 
                   value={novoUsuario.password} 
