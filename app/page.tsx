@@ -6,7 +6,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell 
 } from 'recharts';
 import { 
-  Users, Award, BookOpen, CheckCircle, AlertTriangle, FileText, Upload, Save, Plus, Search, Printer, Layers, ExternalLink, Trash2, LogOut, Lock, Mail, UserPlus, Shield
+  Users, Award, BookOpen, CheckCircle, AlertTriangle, FileText, Upload, Save, Plus, Search, Printer, Layers, ExternalLink, Trash2, LogOut, Lock, Mail, UserPlus, Shield, Calendar
 } from 'lucide-react';
 
 const SUPABASE_URL = 'https://qpmgzztaduetfrjcvswo.supabase.co';
@@ -21,6 +21,7 @@ export default function EnterpriseDashboard() {
   const [authError, setAuthError] = useState('');
 
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [selectedAno, setSelectedAno] = useState<number>(new Date().getFullYear());
   const [colaboradores, setColaboradores] = useState<any[]>([]);
   const [treinamentos, setTreinamentos] = useState<any[]>([]);
   const [registros, setRegistros] = useState<any[]>([]);
@@ -107,9 +108,21 @@ export default function EnterpriseDashboard() {
     setLoading(false);
   }
 
-  // Métricas
-  const totalHoras = registros.reduce((acc, r) => acc + (Number(r.treinamentos?.carga_horaria) || 0), 0);
-  const totalConcluidos = registros.length;
+  // Filtragem de Registros pelo Ano Selecionado
+  const registrosAno = registros.filter(r => {
+    if (!r.data_realizacao) return true;
+    const ano = new Date(r.data_realizacao).getFullYear();
+    return ano === selectedAno;
+  });
+
+  // Métricas do Dashboard Reativas ao Ano Selecionado
+  const totalHoras = registrosAno.reduce((acc, r) => {
+    const horas = Number(r.treinamentos?.carga_horaria) || 0;
+    return acc + horas;
+  }, 0);
+
+  const totalConcluidos = registrosAno.length;
+  
   const statusData = [
     { name: '🟢 Concluídos', value: totalConcluidos },
     { name: '🔴 Pendentes LNT', value: Math.max(0, matrizLnt.length - totalConcluidos) }
@@ -161,9 +174,9 @@ export default function EnterpriseDashboard() {
     fetchInitialData();
   }
 
-  async function handleSalvarRegistro(
+  async function handleSalvarRegistroDirect(
     treinamentoId: string, 
-    status: string, 
+    novoStatus: string, 
     dataAplicacao: string, 
     aplicador: string, 
     cargoAplicador: string, 
@@ -179,61 +192,66 @@ export default function EnterpriseDashboard() {
       }
     }
 
-    if (status.includes('Concluido') || status.includes('Concluído')) {
+    const querConcluir = novoStatus.includes('Concluid') || novoStatus.includes('Concluíd');
+
+    if (querConcluir) {
+      const treinoObj = treinamentos.find(t => t.id === treinamentoId);
+      const colabObj = colaboradores.find(c => c.id === selectedColab);
+
       const payload: any = {
         colaborador_id: selectedColab,
         treinamento_id: treinamentoId,
-        data_realizacao: dataAplicacao,
-        instrutor_nome: aplicador,
-        aplicador_cargo: cargoAplicador
+        data_realizacao: dataAplicacao || `${selectedAno}-01-01`,
+        instrutor_nome: aplicador || '',
+        aplicador_cargo: cargoAplicador || ''
       };
+      if (urlForms) payload.url_forms = urlForms;
 
-      if (urlForms) {
-        payload.url_forms = urlForms;
-      }
-
-      const { data: regExistente } = await supabase
-        .from('registros')
-        .select('id')
-        .eq('colaborador_id', selectedColab)
-        .eq('treinamento_id', treinamentoId)
-        .maybeSingle();
-
-      let error = null;
-      if (regExistente) {
-        const res = await supabase
-          .from('registros')
-          .update(payload)
-          .eq('id', regExistente.id);
-        error = res.error;
-      } else {
-        const res = await supabase
-          .from('registros')
-          .insert([payload]);
-        error = res.error;
-      }
-
-      if (error) {
-        alert('Erro ao salvar no banco de dados: ' + error.message);
-      } else {
-        alert('Status atualizado para Concluído com sucesso!');
-      }
-    } else {
-      const { error } = await supabase
+      const { error: delError } = await supabase
         .from('registros')
         .delete()
         .eq('colaborador_id', selectedColab)
         .eq('treinamento_id', treinamentoId);
 
-      if (error) {
-        alert('Erro ao atualizar status: ' + error.message);
+      if (delError) {
+        console.error('Erro ao deletar prévio:', delError.message);
+      }
+
+      const { data: insertedData, error: insError } = await supabase
+        .from('registros')
+        .insert([payload])
+        .select('*, colaboradores(nome, departamento, cargo), treinamentos(nome_curso, carga_horaria, classificacao)');
+
+      if (insError) {
+        alert('Erro ao salvar registro no banco Supabase: ' + insError.message);
       } else {
-        alert('Status atualizado para Pendente com sucesso!');
+        alert('Treinamento registrado como CONCLUÍDO!');
+        const itemInserido = (insertedData && insertedData[0]) ? insertedData[0] : {
+          ...payload,
+          id: `local_${Date.now()}`,
+          colaboradores: colabObj,
+          treinamentos: treinoObj
+        };
+
+        setRegistros(prev => [
+          ...prev.filter(r => !(r.colaborador_id === selectedColab && r.treinamento_id === treinamentoId)),
+          itemInserido
+        ]);
+      }
+    } else {
+      const { error: delError } = await supabase
+        .from('registros')
+        .delete()
+        .eq('colaborador_id', selectedColab)
+        .eq('treinamento_id', treinamentoId);
+
+      if (delError) {
+        alert('Erro ao remover registro do banco Supabase: ' + delError.message);
+      } else {
+        alert('Treinamento alterado para PENDENTE!');
+        setRegistros(prev => prev.filter(r => !(r.colaborador_id === selectedColab && r.treinamento_id === treinamentoId)));
       }
     }
-
-    // Recarrega todos os dados do banco para atualizar instantaneamente o visual
-    await fetchInitialData();
   }
 
   // TELA DE LOGIN
@@ -318,7 +336,7 @@ export default function EnterpriseDashboard() {
   );
 
   const currentColabData = colaboradores.find(c => c.id === selectedColab);
-  const colabRegistros = registros.filter(r => r.colaborador_id === selectedColab);
+  const colabRegistros = registrosAno.filter(r => r.colaborador_id === selectedColab);
   const requisitosCargo = matrizLnt.filter(m => m.cargo === currentColabData?.cargo);
   const cargosExistentes = Array.from(new Set(colaboradores.map(c => c.cargo).filter(Boolean)));
 
@@ -327,7 +345,7 @@ export default function EnterpriseDashboard() {
       {/* Menu Lateral */}
       <aside className="w-64 bg-slate-900 text-white p-6 flex flex-col justify-between shadow-xl">
         <div>
-          <div className="flex items-center gap-3 mb-8">
+          <div className="flex items-center gap-3 mb-6">
             <img 
               src="/Logo_Attend_ Ambiental.png" 
               alt="Logo" 
@@ -335,6 +353,24 @@ export default function EnterpriseDashboard() {
               onError={(e: any) => { e.target.style.display = 'none'; }}
             />
             <h1 className="text-xl font-bold tracking-wider">MAQ GESTÃO</h1>
+          </div>
+
+          {/* Seletor de Ano do Exercício */}
+          <div className="mb-6 bg-slate-800 p-3 rounded-lg border border-slate-700">
+            <label className="block text-xs font-semibold text-slate-400 uppercase mb-1 flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-blue-400" />
+              Ano do Exercício (LNT)
+            </label>
+            <select 
+              value={selectedAno} 
+              onChange={(e) => setSelectedAno(Number(e.target.value))}
+              className="w-full bg-slate-900 border border-slate-600 rounded px-2.5 py-1.5 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value={2026}>Exercício 2026</option>
+              <option value={2025}>Exercício 2025</option>
+              <option value={2024}>Exercício 2024</option>
+              <option value={2023}>Exercício 2023</option>
+            </select>
           </div>
 
           <nav className="space-y-2">
@@ -395,8 +431,8 @@ export default function EnterpriseDashboard() {
           <div className="space-y-8">
             <header className="flex justify-between items-center border-b pb-4">
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">Dashboard Executivo de Treinamentos</h2>
-                <p className="text-slate-500 text-sm">Visão consolidada via Supabase PostgreSQL</p>
+                <h2 className="text-2xl font-bold text-slate-900">Dashboard Executivo — Exercício {selectedAno}</h2>
+                <p className="text-slate-500 text-sm">Visão consolidada do ano selecionado via Supabase PostgreSQL</p>
               </div>
             </header>
 
@@ -406,7 +442,7 @@ export default function EnterpriseDashboard() {
                 <h3 className="text-3xl font-extrabold text-slate-900 mt-2">{colaboradores.length}</h3>
               </div>
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <p className="text-slate-500 text-sm font-medium">Horas de Treinamento</p>
+                <p className="text-slate-500 text-sm font-medium">Horas de Treinamento ({selectedAno})</p>
                 <h3 className="text-3xl font-extrabold text-blue-600 mt-2">{totalHoras}h</h3>
               </div>
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
@@ -421,7 +457,7 @@ export default function EnterpriseDashboard() {
 
             <div className="grid grid-cols-2 gap-8">
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <h4 className="text-lg font-bold text-slate-800 mb-4">Compliance da Matriz LNT</h4>
+                <h4 className="text-lg font-bold text-slate-800 mb-4">Compliance da Matriz LNT — {selectedAno}</h4>
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -458,7 +494,7 @@ export default function EnterpriseDashboard() {
           <div className="space-y-6">
             <header className="flex justify-between items-center border-b pb-4">
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">Lançamentos e Histórico Individual</h2>
+                <h2 className="text-2xl font-bold text-slate-900">Lançamentos e Histórico Individual — {selectedAno}</h2>
                 <p className="text-slate-500 text-sm">Gerencie conclusões, datas e faça o upload de listas de presença em PDF</p>
               </div>
 
@@ -512,22 +548,22 @@ export default function EnterpriseDashboard() {
             <div className="space-y-4 mt-6">
               {treinamentos.map(treino => {
                 const reg = colabRegistros.find(r => r.treinamento_id === treino.id);
-                const isConcluido = !!reg;
+                const isConcluidoBD = !!reg;
                 const isObrigatorioCargo = requisitosCargo.some(r => r.treinamento_id === treino.id);
 
                 return (
-                  <div key={treino.id} className={`bg-white p-6 rounded-xl border ${isObrigatorioCargo ? 'border-l-4 border-l-blue-500 border-slate-200' : 'border-slate-200'} shadow-sm flex items-center justify-between gap-6`}>
+                  <div key={`${selectedColab}_${treino.id}_${selectedAno}`} className={`bg-white p-6 rounded-xl border ${isObrigatorioCargo ? 'border-l-4 border-l-blue-500 border-slate-200' : 'border-slate-200'} shadow-sm flex items-center justify-between gap-6`}>
                     <div className="w-1/3">
                       <div className="flex items-center gap-2">
                         <h4 className="font-bold text-slate-900 text-lg">{treino.nome_curso}</h4>
                         {isObrigatorioCargo && (
-                          <span className="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded font-semibold">LNT Obrigatoria</span>
+                          <span className="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded font-semibold">LNT Obrigatória</span>
                         )}
                       </div>
                       <p className="text-slate-500 text-sm">{treino.carga_horaria}h — {treino.classificacao}</p>
                       {reg?.url_forms && (
                         <a href={reg.url_forms} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-2 font-medium">
-                          <ExternalLink className="w-3 h-3" /> Ver Evidencia Anexada
+                          <ExternalLink className="w-3 h-3" /> Ver Evidência Anexada
                         </a>
                       )}
                     </div>
@@ -535,26 +571,59 @@ export default function EnterpriseDashboard() {
                     <form 
                       onSubmit={(e: any) => {
                         e.preventDefault();
-                        const status = e.target.status.value;
-                        const data = e.target.data.value;
-                        const aplicador = e.target.aplicador.value;
-                        const cargo = e.target.cargo.value;
-                        const file = e.target.arquivo.files[0] || null;
-                        handleSalvarRegistro(treino.id, status, data, aplicador, cargo, file);
+                        const statusVal = e.target.statusSelect.value;
+                        const dataVal = e.target.dataInput.value;
+                        const aplicadorVal = e.target.aplicadorInput.value;
+                        const cargoVal = e.target.cargoInput.value;
+                        const file = e.target.arquivoInput.files[0] || null;
+                        handleSalvarRegistroDirect(treino.id, statusVal, dataVal, aplicadorVal, cargoVal, file);
                       }}
                       className="flex-1 flex items-center gap-3"
                     >
-                      <select name="status" key={reg ? 'concluido' : 'pendente'} defaultValue={isConcluido ? '🟢 Concluido' : '🔴 Pendente'} className="px-3 py-2 border rounded-lg text-sm bg-slate-50">
+                      <select 
+                        name="statusSelect"
+                        value={isConcluidoBD ? '🟢 Concluído' : '🔴 Pendente'} 
+                        onChange={(e) => {
+                          const novoStatus = e.target.value;
+                          const form = e.target.form as any;
+                          const dataVal = form.dataInput.value;
+                          const aplicadorVal = form.aplicadorInput.value;
+                          const cargoVal = form.cargoInput.value;
+                          const file = form.arquivoInput.files[0] || null;
+                          handleSalvarRegistroDirect(treino.id, novoStatus, dataVal, aplicadorVal, cargoVal, file);
+                        }}
+                        className={`px-3 py-2 border rounded-lg text-sm font-semibold cursor-pointer ${isConcluidoBD ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-red-50 text-red-700 border-red-300'}`}
+                      >
                         <option value="🔴 Pendente">🔴 Pendente</option>
-                        <option value="🟢 Concluido">🟢 Concluido</option>
+                        <option value="🟢 Concluído">🟢 Concluído</option>
                       </select>
 
-                      <input type="date" name="data" defaultValue={reg?.data_realizacao || new Date().toISOString().split('T')[0]} className="px-3 py-2 border rounded-lg text-sm bg-slate-50" />
-                      <input type="text" name="aplicador" defaultValue={reg?.instrutor_nome || treino.aplicador_padrao || ''} placeholder="Instrutor/Aplicador" className="px-3 py-2 border rounded-lg text-sm w-36 bg-slate-50" />
-                      <input type="text" name="cargo" defaultValue={reg?.aplicador_cargo || treino.aplicador_cargo_padrao || ''} placeholder="Cargo Aplicador" className="px-3 py-2 border rounded-lg text-sm w-32 bg-slate-50" />
-                      <input type="file" name="arquivo" className="text-xs w-36" />
+                      <input 
+                        name="dataInput"
+                        type="date" 
+                        defaultValue={reg?.data_realizacao || `${selectedAno}-01-01`} 
+                        className="px-3 py-2 border rounded-lg text-sm bg-slate-50" 
+                      />
+                      
+                      <input 
+                        name="aplicadorInput"
+                        type="text" 
+                        defaultValue={reg?.instrutor_nome || treino.aplicador_padrao || ''} 
+                        placeholder="Instrutor" 
+                        className="px-3 py-2 border rounded-lg text-sm w-36 bg-slate-50" 
+                      />
 
-                      <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition">
+                      <input 
+                        name="cargoInput"
+                        type="text" 
+                        defaultValue={reg?.aplicador_cargo || treino.aplicador_cargo_padrao || ''} 
+                        placeholder="Cargo Instrutor" 
+                        className="px-3 py-2 border rounded-lg text-sm w-32 bg-slate-50" 
+                      />
+
+                      <input name="arquivoInput" type="file" className="text-xs w-36" />
+
+                      <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition shadow-sm">
                         <Save className="w-4 h-4" /> Salvar
                       </button>
                     </form>
@@ -570,7 +639,7 @@ export default function EnterpriseDashboard() {
           <div className="space-y-6">
             <header className="border-b pb-4">
               <h2 className="text-2xl font-bold text-slate-900">Matriz LNT (Levantamento de Necessidades de Treinamento)</h2>
-              <p className="text-slate-500 text-sm">Associe treinamentos e normas obrigatorias aos cargos existentes</p>
+              <p className="text-slate-500 text-sm">Associe treinamentos e normas obrigatórias aos cargos existentes</p>
             </header>
 
             <form onSubmit={handleAddMatriz} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex gap-4 items-end max-w-3xl">
@@ -613,9 +682,9 @@ export default function EnterpriseDashboard() {
               <table className="w-full text-left border-collapse">
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 text-xs uppercase font-semibold">
                   <tr>
-                    <th className="p-4">Cargo / Funcao</th>
+                    <th className="p-4">Cargo / Função</th>
                     <th className="p-4">Treinamento Requerido</th>
-                    <th className="p-4 text-right">Acao</th>
+                    <th className="p-4 text-right">Ação</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
@@ -641,7 +710,7 @@ export default function EnterpriseDashboard() {
           <div className="space-y-6">
             <header className="border-b pb-4">
               <h2 className="text-2xl font-bold text-slate-900">Novo Colaborador</h2>
-              <p className="text-slate-500 text-sm">Adicionar funcionarios a base corporativa do Supabase</p>
+              <p className="text-slate-500 text-sm">Adicionar funcionários à base corporativa do Supabase</p>
             </header>
 
             <form onSubmit={handleAddColaborador} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm max-w-2xl space-y-4">
@@ -675,7 +744,7 @@ export default function EnterpriseDashboard() {
         {activeTab === 'catalogo' && (
           <div className="space-y-6">
             <header className="border-b pb-4">
-              <h2 className="text-2xl font-bold text-slate-900">Catalogo Geral de Treinamentos</h2>
+              <h2 className="text-2xl font-bold text-slate-900">Catálogo Geral de Treinamentos</h2>
               <p className="text-slate-500 text-sm">Cursos, procedimentos operacionais (PO/IT) e normas regulamentadoras</p>
             </header>
 
@@ -685,15 +754,15 @@ export default function EnterpriseDashboard() {
                 <input type="text" value={novoTreino.nome_curso} onChange={e => setNovoTreino({...novoTreino, nome_curso: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-slate-50" required />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Carga Horaria (h)</label>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Carga Horária (h)</label>
                 <input type="number" step="0.5" value={novoTreino.carga_horaria} onChange={e => setNovoTreino({...novoTreino, carga_horaria: parseFloat(e.target.value)})} className="w-full p-2 border rounded-lg text-sm bg-slate-50" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Frequencia</label>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Frequência</label>
                 <input type="text" value={novoTreino.frequencia} onChange={e => setNovoTreino({...novoTreino, frequencia: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-slate-50" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Classificacao</label>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Classificação</label>
                 <input type="text" value={novoTreino.classificacao} onChange={e => setNovoTreino({...novoTreino, classificacao: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-slate-50" />
               </div>
               <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold text-sm flex items-center justify-center gap-2">
@@ -706,9 +775,9 @@ export default function EnterpriseDashboard() {
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 text-xs uppercase font-semibold">
                   <tr>
                     <th className="p-4">Treinamento / Norma</th>
-                    <th className="p-4">Carga Horaria</th>
-                    <th className="p-4">Frequencia</th>
-                    <th className="p-4">Classificacao</th>
+                    <th className="p-4">Carga Horária</th>
+                    <th className="p-4">Frequência</th>
+                    <th className="p-4">Classificação</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
@@ -730,8 +799,8 @@ export default function EnterpriseDashboard() {
         {activeTab === 'gestao_usuarios' && (
           <div className="space-y-6">
             <header className="border-b pb-4">
-              <h2 className="text-2xl font-bold text-slate-900">Gestao de Utilizadores e Acessos</h2>
-              <p className="text-slate-500 text-sm">Crie novas contas de acesso para outros administradores ou tecnicos</p>
+              <h2 className="text-2xl font-bold text-slate-900">Gestão de Utilizadores e Acessos</h2>
+              <p className="text-slate-500 text-sm">Crie novas contas de acesso para outros administradores ou técnicos</p>
             </header>
 
             <form onSubmit={handleCreateUser} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm max-w-md space-y-4">
@@ -754,7 +823,7 @@ export default function EnterpriseDashboard() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Senha Provisoria</label>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Senha Provisória</label>
                 <input 
                   type="password" 
                   value={novoUsuario.password} 
