@@ -44,7 +44,6 @@ export default function EnterpriseDashboard() {
 
   const [novoTreino, setNovoTreino] = useState({ nome_curso: '', carga_horaria: 1, frequencia: 'ANUAL', classificacao: 'Exigência da função', aplicador_padrao: '' });
   
-  // INCLUSÃO DO CAMPO INSTRUTOR NA MATRIZ
   const [novaMatriz, setNovaMatriz] = useState({ cargo: '', treinamento_id: '', instrutor_nome: '' });
   
   const [novoUsuario, setNovoUsuario] = useState({ email: '', password: '' });
@@ -419,8 +418,25 @@ export default function EnterpriseDashboard() {
   const listaRelatorioConcluidos = pessoasExigidas.filter(c => idsColabsConcluidos.includes(String(c.id)));
   const listaRelatorioPendentes = pessoasExigidas.filter(c => !idsColabsConcluidos.includes(String(c.id)));
 
-  // BUSCA O INSTRUTOR CADASTRADO PARA ESTE TREINAMENTO
-  const instrutorLnt = matrizLnt.find(m => String(m.treinamento_id) === String(currentTreinamento?.id))?.instrutor_nome;
+  // BUSCA INTELIGENTE DO NOME DO INSTRUTOR PELA MATRIZ OU REGISTRO
+  const instrutorLnt = useMemo(() => {
+    if (!currentTreinamento) return '';
+    
+    // Tenta primeiro encontrar pelo cargo do colaborador selecionado na Matriz LNT
+    if (colabCertificado) {
+      const matrizDoColab = matrizLnt.find(m => 
+        String(m.treinamento_id) === String(currentTreinamento.id) && 
+        m.cargo === colabCertificado.cargo
+      );
+      if (matrizDoColab?.instrutor_nome) return matrizDoColab.instrutor_nome;
+    }
+
+    // Se não encontrou cargo específico, pega qualquer instrutor vinculado a esse curso na Matriz LNT
+    const matrizGeral = matrizLnt.find(m => String(m.treinamento_id) === String(currentTreinamento.id) && m.instrutor_nome);
+    if (matrizGeral?.instrutor_nome) return matrizGeral.instrutor_nome;
+
+    return '';
+  }, [currentTreinamento, colabCertificado, matrizLnt]);
 
   return (
     <div className="flex h-screen bg-slate-100 font-sans text-slate-800">
