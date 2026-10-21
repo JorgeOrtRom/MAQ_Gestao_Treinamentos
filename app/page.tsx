@@ -6,7 +6,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid
 } from 'recharts';
 import { 
-  Users, Award, BookOpen, CheckCircle, AlertTriangle, FileText, Upload, Save, Plus, Search, Printer, Layers, ExternalLink, Trash2, LogOut, Lock, Mail, UserPlus, Shield, Calendar, Edit3, X, Activity, TrendingUp, CheckSquare, Building, UserCheck, Clock
+  Users, Award, BookOpen, CheckCircle, AlertTriangle, FileText, Upload, Save, Plus, Search, Printer, Layers, ExternalLink, Trash2, LogOut, Lock, Mail, UserPlus, Shield, Calendar as CalendarIcon, Edit3, X, Activity, TrendingUp, CheckSquare, Building, UserCheck, Clock
 } from 'lucide-react';
 
 const SUPABASE_URL = 'https://qpmgzztaduetfrjcvswo.supabase.co';
@@ -47,6 +47,9 @@ export default function EnterpriseDashboard() {
   
   const [novoUsuario, setNovoUsuario] = useState({ email: '', password: '' });
   const [userSuccess, setUserSuccess] = useState('');
+
+  // ESTADO DO CALENDÁRIO / AGENDAMENTO PREVISTO
+  const [datasPrevistas, setDatasPrevistas] = useState<{ [key: string]: string }>({});
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -112,7 +115,6 @@ export default function EnterpriseDashboard() {
     ...matrizLnt.map(m => m.cargo)
   ].filter(c => c && typeof c === 'string' && c.trim() !== ''))).sort();
 
-  // FILTRAGEM RIGOROSA: IGNORA REGISTROS DE COLABORADORES OU TREINAMENTOS QUE FORAM EXCLUÍDOS
   const registrosAno = useMemo(() => {
     const idsColabsValidos = new Set(colaboradores.map(c => String(c.id)));
     const idsTreinosValidos = new Set(treinamentos.map(t => String(t.id)));
@@ -189,6 +191,13 @@ export default function EnterpriseDashboard() {
   ], [totalConcluidos, pendenciasTotais]);
 
   const COLORS = ['#10B981', '#EF4444'];
+
+  function handleDataPrevistaChange(treinamentoId: string, data: string) {
+    setDatasPrevistas(prev => ({
+      ...prev,
+      [`${selectedAno}_${treinamentoId}`]: data
+    }));
+  }
 
   async function handleAddColaborador(e: React.FormEvent) {
     e.preventDefault();
@@ -430,6 +439,7 @@ export default function EnterpriseDashboard() {
         }
       `}</style>
 
+      {/* MENU LATERAL COM OPÇÕES DE ANOS EXPANDIDAS E ABA DE CALENDÁRIO */}
       <aside className="w-64 bg-slate-900 text-white p-6 flex flex-col justify-between shadow-xl no-print">
         <div>
           <div className="flex items-center gap-3 mb-6">
@@ -437,8 +447,10 @@ export default function EnterpriseDashboard() {
             <h1 className="text-xl font-bold tracking-wider">MAQ GESTÃO</h1>
           </div>
           <div className="mb-6 bg-slate-800 p-3 rounded-lg border border-slate-700">
-            <label className="block text-xs font-semibold text-slate-400 uppercase mb-1 flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5 text-blue-400" />Ano do Exercício (LNT)</label>
+            <label className="block text-xs font-semibold text-slate-400 uppercase mb-1 flex items-center gap-1.5"><CalendarIcon className="w-3.5 h-3.5 text-blue-400" />Ano do Exercício (LNT)</label>
             <select value={selectedAno} onChange={(e) => setSelectedAno(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-600 rounded px-2.5 py-1.5 text-sm font-bold text-white outline-none">
+              <option value={2028}>Exercício 2028</option>
+              <option value={2027}>Exercício 2027</option>
               <option value={2026}>Exercício 2026</option>
               <option value={2025}>Exercício 2025</option>
               <option value={2024}>Exercício 2024</option>
@@ -448,6 +460,7 @@ export default function EnterpriseDashboard() {
           <nav className="space-y-2">
             <button onClick={() => { setColabCertificado(null); setActiveTab('relatorio_curso'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition ${activeTab === 'relatorio_curso' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800 text-slate-400'}`}><Activity className="w-5 h-5" /> Relatório por Curso</button>
             <button onClick={() => { setColabCertificado(null); setActiveTab('dashboard'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition ${activeTab === 'dashboard' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800 text-slate-400'}`}><BarChart className="w-5 h-5" /> Dashboard Executivo</button>
+            <button onClick={() => { setColabCertificado(null); setActiveTab('calendario'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition ${activeTab === 'calendario' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800 text-slate-400'}`}><CalendarIcon className="w-5 h-5" /> Calendário & Agenda</button>
             <button onClick={() => { setColabCertificado(null); setActiveTab('colaborador'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition ${activeTab === 'colaborador' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800 text-slate-400'}`}><CheckCircle className="w-5 h-5" /> Lançamentos Individuais</button>
             <button onClick={() => { setColabCertificado(null); setActiveTab('matriz_lnt'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition ${activeTab === 'matriz_lnt' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800 text-slate-400'}`}><Layers className="w-5 h-5" /> Matriz LNT por Cargo</button>
             <button onClick={() => { setColabCertificado(null); setActiveTab('gestao_colabs'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition ${activeTab === 'gestao_colabs' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800 text-slate-400'}`}><Users className="w-5 h-5" /> Colaboradores</button>
@@ -719,7 +732,7 @@ export default function EnterpriseDashboard() {
           </div>
         )}
 
-        {/* DASHBOARD EXECUTIVO COM NOVOS CARDS KPIS (TREINAMENTOS E PESSOAS MAPEADAS) */}
+        {/* DASHBOARD EXECUTIVO */}
         {activeTab === 'dashboard' && (
           <div className="space-y-8">
             <header className="flex justify-between items-center border-b pb-4">
@@ -785,7 +798,6 @@ export default function EnterpriseDashboard() {
               </div>
             </div>
 
-            {/* GRÁFICOS PRINCIPAIS */}
             <div className="grid grid-cols-2 gap-8">
               
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
@@ -829,7 +841,6 @@ export default function EnterpriseDashboard() {
 
             </div>
 
-            {/* GRÁFICO DE CARGA HORÁRIA */}
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
               <div className="flex justify-between items-center mb-4">
                 <div>
@@ -870,6 +881,83 @@ export default function EnterpriseDashboard() {
               </div>
             </div>
 
+          </div>
+        )}
+
+        {/* NOVA ABA: CALENDÁRIO & CRONOGRAMA DE APLICAÇÃO PREVISTA */}
+        {activeTab === 'calendario' && (
+          <div className="space-y-6">
+            <header className="flex justify-between items-center border-b pb-4">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900">Calendário de Treinamentos — Exercício {selectedAno}</h2>
+                <p className="text-slate-500 text-sm">Defina as datas previstas de aplicação de cada treinamento para o ano selecionado</p>
+              </div>
+            </header>
+
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+              <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                <h3 className="font-semibold text-slate-700 flex items-center gap-2">
+                  <CalendarIcon className="w-4 h-4 text-blue-600" />
+                  Planejamento Anual de Aplicação ({treinamentos.length} Treinamentos)
+                </h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-white border-b border-slate-200 text-xs uppercase font-semibold text-slate-500">
+                    <tr>
+                      <th className="p-4">Treinamento / Norma</th>
+                      <th className="p-4">Carga Horária</th>
+                      <th className="p-4">Classificação</th>
+                      <th className="p-4">Data Prevista de Aplicação</th>
+                      <th className="p-4 text-center">Status no Exercício</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-sm">
+                    {treinamentos.map(t => {
+                      const keyPrevista = `${selectedAno}_${t.id}`;
+                      const dataAtual = datasPrevistas[keyPrevista] || '';
+                      
+                      const concluidosCount = registrosAno.filter(r => String(r.treinamento_id) === String(t.id)).length;
+                      const cargosExigidos = matrizLnt.filter(m => String(m.treinamento_id) === String(t.id)).map(m => m.cargo);
+                      const totalPessoasExigidas = colaboradores.filter(c => cargosExigidos.includes(c.cargo)).length;
+
+                      const isConcluidoTotal = totalPessoasExigidas > 0 && concluidosCount >= totalPessoasExigidas;
+
+                      return (
+                        <tr key={t.id} className="hover:bg-slate-50 transition">
+                          <td className="p-4 font-bold text-slate-900">{t.nome_curso}</td>
+                          <td className="p-4 text-slate-600">{t.carga_horaria}h</td>
+                          <td className="p-4 text-slate-600">{t.classificacao}</td>
+                          <td className="p-4">
+                            <input 
+                              type="date" 
+                              value={dataAtual}
+                              onChange={(e) => handleDataPrevistaChange(String(t.id), e.target.value)}
+                              className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </td>
+                          <td className="p-4 text-center">
+                            {isConcluidoTotal ? (
+                              <span className="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-bold inline-flex items-center gap-1">
+                                <CheckCircle className="w-3.5 h-3.5" /> Concluído
+                              </span>
+                            ) : concluidosCount > 0 ? (
+                              <span className="bg-blue-100 text-blue-800 text-xs px-2.5 py-1 rounded-full font-bold">
+                                em Andamento ({concluidosCount}/{totalPessoasExigidas})
+                              </span>
+                            ) : (
+                              <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-bold">
+                                Previsto ({totalPessoasExigidas} Pessoas)
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 
