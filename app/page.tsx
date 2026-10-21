@@ -6,7 +6,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid
 } from 'recharts';
 import { 
-  Users, Award, BookOpen, CheckCircle, AlertTriangle, FileText, Upload, Save, Plus, Search, Printer, Layers, ExternalLink, Trash2, LogOut, Lock, Mail, UserPlus, Shield, Calendar as CalendarIcon, Edit3, X, Activity, TrendingUp, CheckSquare, Building, UserCheck, Clock
+  Users, Award, BookOpen, CheckCircle, AlertTriangle, FileText, Upload, Save, Plus, Search, Printer, Layers, ExternalLink, Trash2, LogOut, Lock, Mail, UserPlus, Shield, Calendar as CalendarIcon, Edit3, X, Activity, TrendingUp, CheckSquare, Building, UserCheck, Clock, UserCheck as UserIcon
 } from 'lucide-react';
 
 const SUPABASE_URL = 'https://qpmgzztaduetfrjcvswo.supabase.co';
@@ -43,12 +43,13 @@ export default function EnterpriseDashboard() {
   const [editColabForm, setEditColabForm] = useState({ nome: '', cargo: '', departamento: '', gestor: '' });
 
   const [novoTreino, setNovoTreino] = useState({ nome_curso: '', carga_horaria: 1, frequencia: 'ANUAL', classificacao: 'Exigência da função', aplicador_padrao: '' });
-  const [novaMatriz, setNovaMatriz] = useState({ cargo: '', treinamento_id: '' });
+  
+  // INCLUSÃO DO CAMPO INSTRUTOR NA MATRIZ
+  const [novaMatriz, setNovaMatriz] = useState({ cargo: '', treinamento_id: '', instrutor_nome: '' });
   
   const [novoUsuario, setNovoUsuario] = useState({ email: '', password: '' });
   const [userSuccess, setUserSuccess] = useState('');
 
-  // ESTADO DO CALENDÁRIO / AGENDAMENTO PREVISTO
   const [datasPrevistas, setDatasPrevistas] = useState<{ [key: string]: string }>({});
 
   useEffect(() => {
@@ -256,13 +257,18 @@ export default function EnterpriseDashboard() {
     const cargoFinal = isOutroCargo ? cargoManual.trim() : novaMatriz.cargo.trim();
     if (!cargoFinal || !novaMatriz.treinamento_id) return alert('Selecione ou informe um cargo e escolha o treinamento!');
 
-    const { error } = await supabase.from('matriz_cargo_treinamento').insert([{ cargo: cargoFinal, treinamento_id: novaMatriz.treinamento_id }]);
+    const { error } = await supabase.from('matriz_cargo_treinamento').insert([{ 
+      cargo: cargoFinal, 
+      treinamento_id: novaMatriz.treinamento_id,
+      instrutor_nome: novaMatriz.instrutor_nome
+    }]);
+
     if (!error) {
-      setNovaMatriz({ cargo: '', treinamento_id: '' });
+      setNovaMatriz({ cargo: '', treinamento_id: '', instrutor_nome: '' });
       setCargoManual('');
       setIsOutroCargo(false);
       await fetchInitialData();
-      alert('Vínculo criado na Matriz LNT!');
+      alert('Vínculo e Instrutor salvos na Matriz LNT!');
     } else alert('Erro na Matriz LNT: ' + error.message);
   }
 
@@ -413,6 +419,9 @@ export default function EnterpriseDashboard() {
   const listaRelatorioConcluidos = pessoasExigidas.filter(c => idsColabsConcluidos.includes(String(c.id)));
   const listaRelatorioPendentes = pessoasExigidas.filter(c => !idsColabsConcluidos.includes(String(c.id)));
 
+  // BUSCA O INSTRUTOR CADASTRADO PARA ESTE TREINAMENTO
+  const instrutorLnt = matrizLnt.find(m => String(m.treinamento_id) === String(currentTreinamento?.id))?.instrutor_nome;
+
   return (
     <div className="flex h-screen bg-slate-100 font-sans text-slate-800">
       
@@ -439,7 +448,6 @@ export default function EnterpriseDashboard() {
         }
       `}</style>
 
-      {/* MENU LATERAL COM OPÇÕES DE ANOS EXPANDIDAS E ABA DE CALENDÁRIO */}
       <aside className="w-64 bg-slate-900 text-white p-6 flex flex-col justify-between shadow-xl no-print">
         <div>
           <div className="flex items-center gap-3 mb-6">
@@ -476,7 +484,7 @@ export default function EnterpriseDashboard() {
 
       <main className="flex-1 overflow-y-auto p-8">
         
-        {/* CERTIFICADO DE CONCLUSÃO EM A4 PAISAGEM */}
+        {/* CERTIFICADO DE CONCLUSÃO EM A4 PAISAGEM COM NOME DO INSTRUTOR */}
         {colabCertificado && currentTreinamento && (
           <div className="hidden print:flex w-full h-[188mm] p-8 border-[12px] border-slate-900 rounded-3xl bg-white text-center flex-col justify-between relative shadow-2xl box-border">
             <div className="absolute inset-3 border-2 border-amber-500 rounded-2xl pointer-events-none"></div>
@@ -534,7 +542,7 @@ export default function EnterpriseDashboard() {
               </div>
               <div className="text-center">
                 <div className="border-t-2 border-slate-800 w-64 mx-auto pt-2 text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  Instrutor Responsável
+                  {instrutorLnt || 'Instrutor Responsável'}
                   <span className="block text-[10px] font-normal text-slate-500 normal-case mt-0.5">Assinatura / MTR / Registro</span>
                 </div>
               </div>
@@ -588,7 +596,7 @@ export default function EnterpriseDashboard() {
                       </div>
                       <div>
                         <p><strong>Data de Realização:</strong> ____ / ____ / {selectedAno}</p>
-                        <p className="mt-1"><strong>Instrutor:</strong> ___________________________________</p>
+                        <p className="mt-1"><strong>Instrutor:</strong> {instrutorLnt || '___________________________________'}</p>
                       </div>
                     </div>
                   </div>
@@ -598,8 +606,9 @@ export default function EnterpriseDashboard() {
                   <div className="col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                     <h3 className="text-lg font-bold text-slate-900 mb-2">{currentTreinamento.nome_curso}</h3>
                     <p className="text-slate-500 text-sm mb-4">Carga Horária: {currentTreinamento.carga_horaria}h | Classificação: {currentTreinamento.classificacao}</p>
+                    {instrutorLnt && <p className="text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 inline-block px-3 py-1 rounded-md mb-4">👨‍🏫 Instrutor Designado: {instrutorLnt}</p>}
                     
-                    <div className="mt-4">
+                    <div className="mt-2">
                       <h4 className="text-xs font-semibold text-slate-500 uppercase mb-2">Cargos Exigidos (Matriz LNT):</h4>
                       <div className="flex flex-wrap gap-2">
                         {cargosQueObrigamTreino.length > 0 ? cargosQueObrigamTreino.map(cargo => (
@@ -654,7 +663,7 @@ export default function EnterpriseDashboard() {
                     
                     <div className="mt-16 flex justify-center text-xs text-slate-700">
                       <div className="text-center w-72 border-t border-slate-600 pt-1">
-                        <strong>Assinatura do Instrutor Responsável</strong>
+                        <strong>Assinatura do Instrutor: {instrutorLnt || '_______________________'}</strong>
                       </div>
                     </div>
                   </div>
@@ -884,7 +893,7 @@ export default function EnterpriseDashboard() {
           </div>
         )}
 
-        {/* NOVA ABA: CALENDÁRIO & CRONOGRAMA DE APLICAÇÃO PREVISTA */}
+        {/* CALENDÁRIO */}
         {activeTab === 'calendario' && (
           <div className="space-y-6">
             <header className="flex justify-between items-center border-b pb-4">
@@ -1061,41 +1070,77 @@ export default function EnterpriseDashboard() {
           </div>
         )}
 
-        {/* MATRIZ LNT */}
+        {/* MATRIZ LNT COM O CAMPO INSTRUTOR */}
         {activeTab === 'matriz_lnt' && (
           <div className="space-y-6">
-            <header className="border-b pb-4"><h2 className="text-2xl font-bold text-slate-900">Matriz LNT</h2></header>
-            <form onSubmit={handleAddMatriz} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex gap-4 items-end max-w-3xl">
-              <div className="flex-1">
+            <header className="border-b pb-4">
+              <h2 className="text-2xl font-bold text-slate-900">Matriz LNT por Cargo</h2>
+              <p className="text-slate-500 text-sm">Associe cargos, treinamentos e o instrutor responsável pela disciplina</p>
+            </header>
+
+            <form onSubmit={handleAddMatriz} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm grid grid-cols-4 gap-4 items-end">
+              <div>
                 <div className="flex justify-between items-center mb-1">
-                  <label className="block text-xs font-medium text-slate-700">Cargo</label>
-                  <button type="button" onClick={() => setIsOutroCargo(!isOutroCargo)} className="text-xs text-blue-600 flex items-center gap-1"><Edit3 className="w-3 h-3" />{isOutroCargo ? 'Selecionar da Lista' : '+ Novo Cargo'}</button>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase">Cargo</label>
+                  <button type="button" onClick={() => setIsOutroCargo(!isOutroCargo)} className="text-xs text-blue-600 flex items-center gap-1"><Edit3 className="w-3 h-3" />{isOutroCargo ? 'Lista' : '+ Novo'}</button>
                 </div>
                 {isOutroCargo ? (
-                  <input type="text" value={cargoManual} onChange={e => setCargoManual(e.target.value)} className="w-full p-2 border rounded-lg text-sm" required />
+                  <input type="text" value={cargoManual} onChange={e => setCargoManual(e.target.value)} className="w-full p-2 border rounded-lg text-sm bg-slate-50" required placeholder="Digite o novo cargo" />
                 ) : (
-                  <select value={novaMatriz.cargo} onChange={e => { if (e.target.value === '__OUTRO__') setIsOutroCargo(true); else setNovaMatriz({...novaMatriz, cargo: e.target.value}); }} className="w-full p-2 border rounded-lg text-sm" required>
+                  <select value={novaMatriz.cargo} onChange={e => { if (e.target.value === '__OUTRO__') setIsOutroCargo(true); else setNovaMatriz({...novaMatriz, cargo: e.target.value}); }} className="w-full p-2 border rounded-lg text-sm bg-slate-50" required>
                     <option value="">Selecione o cargo...</option>
                     {cargosUnicos.map(cargo => <option key={cargo} value={cargo}>{cargo}</option>)}
                     <option value="__OUTRO__">+ Novo Cargo...</option>
                   </select>
                 )}
               </div>
-              <div className="flex-1">
-                <label className="block text-xs font-medium text-slate-700 mb-1">Treinamento</label>
-                <select value={novaMatriz.treinamento_id} onChange={e => setNovaMatriz({...novaMatriz, treinamento_id: e.target.value})} className="w-full p-2 border rounded-lg text-sm" required>
-                  <option value="">Selecione...</option>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Treinamento</label>
+                <select value={novaMatriz.treinamento_id} onChange={e => setNovaMatriz({...novaMatriz, treinamento_id: e.target.value})} className="w-full p-2 border rounded-lg text-sm bg-slate-50" required>
+                  <option value="">Selecione o treinamento...</option>
                   {treinamentos.map(t => <option key={t.id} value={t.id}>{t.nome_curso}</option>)}
                 </select>
               </div>
-              <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold text-sm flex items-center gap-2"><Plus className="w-4 h-4" /> Vincular</button>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Instrutor Responsável</label>
+                <input 
+                  type="text" 
+                  value={novaMatriz.instrutor_nome} 
+                  onChange={e => setNovaMatriz({...novaMatriz, instrutor_nome: e.target.value})} 
+                  className="w-full p-2 border rounded-lg text-sm bg-slate-50" 
+                  placeholder="Ex: Eng. Carlos Eduardo" 
+                />
+              </div>
+
+              <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-bold text-sm flex items-center justify-center gap-2 shadow-sm">
+                <Plus className="w-4 h-4" /> Vincular
+              </button>
             </form>
+
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
               <table className="w-full text-left border-collapse">
-                <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase font-semibold"><tr><th className="p-4">Cargo</th><th className="p-4">Treinamento</th><th className="p-4 text-right">Ação</th></tr></thead>
+                <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase font-semibold text-slate-500">
+                  <tr>
+                    <th className="p-4">Cargo</th>
+                    <th className="p-4">Treinamento Exigido</th>
+                    <th className="p-4">Instrutor Cadastrado</th>
+                    <th className="p-4 text-right">Ação</th>
+                  </tr>
+                </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
                   {matrizLnt.map(m => (
-                    <tr key={m.id} className="hover:bg-slate-50"><td className="p-4 font-bold">{m.cargo}</td><td className="p-4 text-blue-600">{m.treinamentos?.nome_curso}</td><td className="p-4 text-right"><button onClick={() => handleDeleteMatrizItem(m.id)} className="text-red-500 hover:text-red-700"><Trash2 className="w-4 h-4" /></button></td></tr>
+                    <tr key={m.id} className="hover:bg-slate-50 transition">
+                      <td className="p-4 font-bold text-slate-900">{m.cargo}</td>
+                      <td className="p-4 text-blue-600 font-semibold">{m.treinamentos?.nome_curso}</td>
+                      <td className="p-4 text-slate-700 font-medium">{m.instrutor_nome || <span className="text-slate-400 italic">Não informado</span>}</td>
+                      <td className="p-4 text-right">
+                        <button onClick={() => handleDeleteMatrizItem(m.id)} className="text-red-500 hover:text-red-700 p-1 rounded transition">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
                   ))}
                 </tbody>
               </table>
