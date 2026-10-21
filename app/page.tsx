@@ -6,7 +6,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid
 } from 'recharts';
 import { 
-  Users, Award, BookOpen, CheckCircle, AlertTriangle, FileText, Upload, Save, Plus, Search, Printer, Layers, ExternalLink, Trash2, LogOut, Lock, Mail, UserPlus, Shield, Calendar as CalendarIcon, Edit3, X, Activity, TrendingUp, CheckSquare, Building, UserCheck, Clock, UserCheck as UserIcon
+  Users, Award, BookOpen, CheckCircle, AlertTriangle, FileText, Upload, Save, Plus, Search, Printer, Layers, ExternalLink, Trash2, LogOut, Lock, Mail, UserPlus, Shield, Calendar as CalendarIcon, Edit3, X, Activity, TrendingUp, CheckSquare, Building, UserCheck, Clock
 } from 'lucide-react';
 
 const SUPABASE_URL = 'https://qpmgzztaduetfrjcvswo.supabase.co';
@@ -43,7 +43,6 @@ export default function EnterpriseDashboard() {
   const [editColabForm, setEditColabForm] = useState({ nome: '', cargo: '', departamento: '', gestor: '' });
 
   const [novoTreino, setNovoTreino] = useState({ nome_curso: '', carga_horaria: 1, frequencia: 'ANUAL', classificacao: 'Exigência da função', aplicador_padrao: '' });
-  
   const [novaMatriz, setNovaMatriz] = useState({ cargo: '', treinamento_id: '', instrutor_nome: '' });
   
   const [novoUsuario, setNovoUsuario] = useState({ email: '', password: '' });
@@ -110,10 +109,14 @@ export default function EnterpriseDashboard() {
     setLoading(false);
   }
 
-  const cargosUnicos = Array.from(new Set([
-    ...colaboradores.map(c => c.cargo),
-    ...matrizLnt.map(m => m.cargo)
-  ].filter(c => c && typeof c === 'string' && c.trim() !== ''))).sort();
+  // --- HOOKS MEMOIZADOS (TODOS NO TOPO DO COMPONENTE) ---
+
+  const cargosUnicos = useMemo(() => {
+    return Array.from(new Set([
+      ...colaboradores.map(c => c.cargo),
+      ...matrizLnt.map(m => m.cargo)
+    ].filter(c => c && typeof c === 'string' && c.trim() !== ''))).sort();
+  }, [colaboradores, matrizLnt]);
 
   const registrosAno = useMemo(() => {
     const idsColabsValidos = new Set(colaboradores.map(c => String(c.id)));
@@ -189,6 +192,24 @@ export default function EnterpriseDashboard() {
     { name: '🟢 Concluídos', value: totalConcluidos },
     { name: '🔴 Pendentes LNT', value: pendenciasTotais }
   ], [totalConcluidos, pendenciasTotais]);
+
+  const currentTreinamento = useMemo(() => {
+    return treinamentos.find(t => String(t.id) === String(selectedTreinamentoRelatorio));
+  }, [treinamentos, selectedTreinamentoRelatorio]);
+
+  const instrutorLnt = useMemo(() => {
+    if (!currentTreinamento) return '';
+    if (colabCertificado) {
+      const matrizDoColab = matrizLnt.find(m => 
+        String(m.treinamento_id) === String(currentTreinamento.id) && 
+        m.cargo === colabCertificado.cargo
+      );
+      if (matrizDoColab?.instrutor_nome) return matrizDoColab.instrutor_nome;
+    }
+    const matrizGeral = matrizLnt.find(m => String(m.treinamento_id) === String(currentTreinamento.id) && m.instrutor_nome);
+    if (matrizGeral?.instrutor_nome) return matrizGeral.instrutor_nome;
+    return '';
+  }, [currentTreinamento, colabCertificado, matrizLnt]);
 
   const COLORS = ['#10B981', '#EF4444'];
 
@@ -347,6 +368,8 @@ export default function EnterpriseDashboard() {
     }, 200);
   }
 
+  // --- RENDERS CONDICIONAIS (APÓS TODOS OS HOOKS) ---
+
   if (!session) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-900 font-sans p-4">
@@ -388,6 +411,8 @@ export default function EnterpriseDashboard() {
     );
   }
 
+  // --- VARIÁVEIS AUXILIARES DE RENDERIZAÇÃO ---
+
   const filteredColaboradores = colaboradores.filter(c => 
     c.nome.toLowerCase().includes(searchTerm.toLowerCase()) || 
     c.departamento?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -408,7 +433,6 @@ export default function EnterpriseDashboard() {
   const idsTreinamentosRequeridos = requisitosCargo.map(m => String(m.treinamento_id));
   const treinamentosDoColaborador = treinamentos.filter(t => idsTreinamentosRequeridos.includes(String(t.id)));
 
-  const currentTreinamento = treinamentos.find(t => String(t.id) === String(selectedTreinamentoRelatorio));
   const cargosQueObrigamTreino = currentTreinamento ? matrizLnt.filter(m => String(m.treinamento_id) === String(currentTreinamento.id)).map(m => m.cargo) : [];
   
   const pessoasExigidas = colaboradores.filter(c => cargosQueObrigamTreino.includes(c.cargo));
@@ -417,26 +441,6 @@ export default function EnterpriseDashboard() {
   
   const listaRelatorioConcluidos = pessoasExigidas.filter(c => idsColabsConcluidos.includes(String(c.id)));
   const listaRelatorioPendentes = pessoasExigidas.filter(c => !idsColabsConcluidos.includes(String(c.id)));
-
-  // BUSCA INTELIGENTE DO NOME DO INSTRUTOR PELA MATRIZ OU REGISTRO
-  const instrutorLnt = useMemo(() => {
-    if (!currentTreinamento) return '';
-    
-    // Tenta primeiro encontrar pelo cargo do colaborador selecionado na Matriz LNT
-    if (colabCertificado) {
-      const matrizDoColab = matrizLnt.find(m => 
-        String(m.treinamento_id) === String(currentTreinamento.id) && 
-        m.cargo === colabCertificado.cargo
-      );
-      if (matrizDoColab?.instrutor_nome) return matrizDoColab.instrutor_nome;
-    }
-
-    // Se não encontrou cargo específico, pega qualquer instrutor vinculado a esse curso na Matriz LNT
-    const matrizGeral = matrizLnt.find(m => String(m.treinamento_id) === String(currentTreinamento.id) && m.instrutor_nome);
-    if (matrizGeral?.instrutor_nome) return matrizGeral.instrutor_nome;
-
-    return '';
-  }, [currentTreinamento, colabCertificado, matrizLnt]);
 
   return (
     <div className="flex h-screen bg-slate-100 font-sans text-slate-800">
