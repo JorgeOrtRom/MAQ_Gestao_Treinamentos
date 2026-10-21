@@ -109,7 +109,7 @@ export default function EnterpriseDashboard() {
     setLoading(false);
   }
 
-  // --- HOOKS MEMOIZADOS (TODOS NO TOPO DO COMPONENTE) ---
+  // --- HOOKS MEMOIZADOS ---
 
   const cargosUnicos = useMemo(() => {
     return Array.from(new Set([
@@ -368,7 +368,7 @@ export default function EnterpriseDashboard() {
     }, 200);
   }
 
-  // --- RENDERS CONDICIONAIS (APÓS TODOS OS HOOKS) ---
+  // --- RENDERS CONDICIONAIS ---
 
   if (!session) {
     return (
@@ -410,8 +410,6 @@ export default function EnterpriseDashboard() {
       </div>
     );
   }
-
-  // --- VARIÁVEIS AUXILIARES DE RENDERIZAÇÃO ---
 
   const filteredColaboradores = colaboradores.filter(c => 
     c.nome.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -504,7 +502,7 @@ export default function EnterpriseDashboard() {
 
       <main className="flex-1 overflow-y-auto p-8">
         
-        {/* CERTIFICADO DE CONCLUSÃO EM A4 PAISAGEM COM NOME DO INSTRUTOR */}
+        {/* CERTIFICADO DE CONCLUSÃO EM A4 PAISAGEM COM TEXTO DA ASSINATURA ATUALIZADO */}
         {colabCertificado && currentTreinamento && (
           <div className="hidden print:flex w-full h-[188mm] p-8 border-[12px] border-slate-900 rounded-3xl bg-white text-center flex-col justify-between relative shadow-2xl box-border">
             <div className="absolute inset-3 border-2 border-amber-500 rounded-2xl pointer-events-none"></div>
@@ -563,7 +561,7 @@ export default function EnterpriseDashboard() {
               <div className="text-center">
                 <div className="border-t-2 border-slate-800 w-64 mx-auto pt-2 text-xs font-bold text-slate-800 uppercase tracking-wider">
                   {instrutorLnt || 'Instrutor Responsável'}
-                  <span className="block text-[10px] font-normal text-slate-500 normal-case mt-0.5">Assinatura / MTR / Registro</span>
+                  <span className="block text-[10px] font-normal text-slate-500 normal-case mt-0.5">Assinatura do Instrutor/Aplicador</span>
                 </div>
               </div>
             </div>
