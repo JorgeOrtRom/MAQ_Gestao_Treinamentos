@@ -112,12 +112,19 @@ export default function EnterpriseDashboard() {
     ...matrizLnt.map(m => m.cargo)
   ].filter(c => c && typeof c === 'string' && c.trim() !== ''))).sort();
 
+  // FILTRAGEM RIGOROSA: IGNORA REGISTROS DE COLABORADORES OU TREINAMENTOS QUE FORAM EXCLUÍDOS
   const registrosAno = useMemo(() => {
+    const idsColabsValidos = new Set(colaboradores.map(c => String(c.id)));
+    const idsTreinosValidos = new Set(treinamentos.map(t => String(t.id)));
+
     return registros.filter(r => {
-      if (!r.data_realizacao) return true;
-      return String(r.data_realizacao).startsWith(String(selectedAno));
+      if (!r.data_realizacao) return false;
+      const pertenceAoAno = String(r.data_realizacao).startsWith(String(selectedAno));
+      const colabExiste = idsColabsValidos.has(String(r.colaborador_id));
+      const treinoExiste = idsTreinosValidos.has(String(r.treinamento_id));
+      return pertenceAoAno && colabExiste && treinoExiste;
     });
-  }, [registros, selectedAno]);
+  }, [registros, selectedAno, colaboradores, treinamentos]);
 
   const totalHoras = useMemo(() => {
     return registrosAno.reduce((acc, r) => acc + (Number(r.treinamentos?.carga_horaria) || 0), 0);
@@ -125,7 +132,6 @@ export default function EnterpriseDashboard() {
 
   const totalConcluidos = registrosAno.length;
 
-  // CÁLCULO DOS INDICADORES E COMPLIANCE
   const complianceTaxa = useMemo(() => {
     if (!matrizLnt.length) return 0;
     return Math.min(100, Math.round((totalConcluidos / matrizLnt.length) * 100));
@@ -135,7 +141,6 @@ export default function EnterpriseDashboard() {
     return Math.max(0, matrizLnt.length - totalConcluidos);
   }, [matrizLnt.length, totalConcluidos]);
 
-  // NOVOS KPIS: PESSOAS MAPEADAS E MÉDIA DE HORAS POR COLABORADOR
   const cargosComLnt = useMemo(() => new Set(matrizLnt.map(m => m.cargo)), [matrizLnt]);
   
   const pessoasMapeadas = useMemo(() => {
@@ -147,7 +152,6 @@ export default function EnterpriseDashboard() {
     return (totalHoras / pessoasMapeadas.length).toFixed(1);
   }, [totalHoras, pessoasMapeadas.length]);
 
-  // ANÁLISE POR DEPARTAMENTO / SETOR
   const dadosPorDepartamento = useMemo(() => {
     const mapa: { [key: string]: { setor: string; concluidos: number } } = {};
     
@@ -725,7 +729,6 @@ export default function EnterpriseDashboard() {
               </div>
             </header>
 
-            {/* PAINEL DE KPIS EXPANDIDOS COM NOVOS CARTÕES SOLICITADOS */}
             <div className="grid grid-cols-6 gap-4">
               <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
                 <div>
